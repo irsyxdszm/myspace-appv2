@@ -1,5 +1,15 @@
 {
  "irsyad": [],
  "ain": [],
+ "events": [
+  {
+   "id": 1794211039153,
+   "date": "2026-11-20",
+   "time": "09:00",
+   "title": "Locum radziah",
+   "kind": "event",
+   "done": false
+  }
+ ],
  "start": "2024-11-30"
 }
