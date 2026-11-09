@@ -1,0 +1,78 @@
+:root {
+  --cream: #fbf6ea; --card: #fffdf7; --lilac: #c9b1ec; --lilac-soft: #e9ddf7;
+  --deep: #7a55b8; --ink: #3a2a55; --muted: #8174a0; --line: #e4d8f0;
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+html { -webkit-tap-highlight-color: transparent; }
+body {
+  margin: 0; background: var(--cream); color: var(--ink);
+  font: 17px/1.5 "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+main { max-width: 30rem; margin: 0 auto; padding: 1.75rem 1.25rem 4rem; }
+[hidden] { display: none !important; }
+h1 { font-size: 2.4rem; letter-spacing: -0.03em; margin: 0 0 .25rem; }
+.sub { color: var(--muted); margin: 0 0 1.5rem; }
+:focus-visible { outline: 3px solid var(--deep); outline-offset: 2px; }
+button { font: inherit; cursor: pointer; }
+.back { display: inline-block; color: var(--deep); text-decoration: none; font-weight: 600; margin-bottom: .75rem; padding: .25rem 0; }
+
+/* Home menu */
+.menu { display: grid; gap: 1rem; }
+.menu a {
+  display: flex; align-items: center; gap: 1rem; padding: 1.25rem; border-radius: 20px;
+  background: var(--lilac-soft); color: var(--ink); text-decoration: none;
+  font-size: 1.25rem; font-weight: 600; border: 2px solid var(--lilac);
+}
+.menu a:active { background: var(--lilac); }
+.badge {
+  display: grid; place-items: center; width: 3rem; height: 3rem; border-radius: 50%;
+  background: var(--deep); color: var(--cream); font-size: 1.4rem; flex: none;
+}
+
+/* Calculator */
+#display {
+  background: var(--lilac-soft); border-radius: 18px; padding: 1.25rem 1.1rem; margin: .75rem 0 1rem;
+  text-align: right; font-size: 2.8rem; font-weight: 600; min-height: 5.5rem;
+  overflow-x: auto; white-space: nowrap;
+}
+.keys { display: grid; grid-template-columns: repeat(4, 1fr); gap: .65rem; }
+.keys button {
+  height: 4.2rem; border: 0; border-radius: 16px; font-size: 1.5rem; font-weight: 500;
+  background: var(--card); color: var(--ink); border: 1px solid var(--line);
+}
+.keys .fn { background: var(--lilac-soft); }
+.keys .op { background: var(--deep); color: var(--cream); border-color: var(--deep); }
+.keys .zero { grid-column: span 2; }
+.keys button:active { filter: brightness(.92); }
+
+/* To-do */
+#todo header { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 1rem; }
+#count { color: var(--muted); margin: 0; font-size: .95rem; }
+#add { display: flex; gap: .5rem; margin-bottom: 1.1rem; }
+input[type=text], input[type=password] {
+  flex: 1; min-width: 0; font: inherit; color: inherit; background: var(--card);
+  border: 2px solid var(--line); border-radius: 12px; padding: .75rem .9rem;
+}
+#add button { background: var(--deep); color: var(--cream); border: 0; border-radius: 12px; padding: 0 1.25rem; font-weight: 600; }
+ul { list-style: none; margin: 0; padding: 0; }
+li {
+  display: flex; align-items: center; gap: .75rem; background: var(--card);
+  border: 1px solid var(--line); border-radius: 12px; padding: .6rem .75rem; margin-bottom: .5rem;
+}
+li input { width: 1.3rem; height: 1.3rem; accent-color: var(--deep); flex: none; }
+li span { flex: 1; overflow-wrap: anywhere; }
+li.done span { color: var(--muted); text-decoration: line-through; text-decoration-color: var(--lilac); text-decoration-thickness: 2px; }
+.del { background: none; border: 0; color: var(--muted); font-size: 1.4rem; line-height: 1; padding: .2rem .5rem; border-radius: 6px; }
+#empty { color: var(--muted); text-align: center; margin-top: 2rem; }
+#clear { display: block; margin: 1.25rem auto 0; background: none; border: 0; color: var(--deep); text-decoration: underline; }
+
+/* Sync */
+label { display: block; font-weight: 600; margin-bottom: 1rem; }
+label input { display: block; width: 100%; margin-top: .35rem; font-weight: 400; }
+#cfg button { width: 100%; background: var(--deep); color: var(--cream); border: 0; border-radius: 12px; padding: .85rem; font-weight: 600; }
+#disconnect { display: block; margin: 1.25rem auto 0; background: none; border: 0; color: var(--deep); text-decoration: underline; }
+#cfg-msg { text-align: center; color: var(--muted); }
+footer { margin-top: 2.5rem; text-align: center; color: var(--muted); font-size: .9rem; }
+footer a { color: var(--deep); }

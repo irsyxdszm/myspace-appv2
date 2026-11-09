@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>My Space</title>
+  <meta name="theme-color" content="#c9b1ec">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main>
+    <!-- HOME: three big buttons -->
+    <section id="home">
+      <h1>Hello</h1>
+      <p class="sub">What would you like to open?</p>
+      <nav class="menu">
+        <a href="#calc"><b class="badge">÷</b><span>Calculator</span></a>
+        <a href="#irsyad"><b class="badge">I</b><span>Irsyad's To-Do</span></a>
+        <a href="#ain"><b class="badge">A</b><span>Ain's To-Do</span></a>
+      </nav>
+    </section>
+
+    <!-- CALCULATOR -->
+    <section id="calc" hidden>
+      <a class="back" href="#">‹ Back</a>
+      <h1>Calculator</h1>
+      <div id="display" aria-live="polite">0</div>
+      <div class="keys" id="keys">
+        <button data-k="C" class="fn">C</button>
+        <button data-k="±" class="fn">±</button>
+        <button data-k="%" class="fn">%</button>
+        <button data-k="÷" class="op">÷</button>
+        <button data-k="7">7</button><button data-k="8">8</button><button data-k="9">9</button>
+        <button data-k="×" class="op">×</button>
+        <button data-k="4">4</button><button data-k="5">5</button><button data-k="6">6</button>
+        <button data-k="−" class="op">−</button>
+        <button data-k="1">1</button><button data-k="2">2</button><button data-k="3">3</button>
+        <button data-k="+" class="op">+</button>
+        <button data-k="0" class="zero">0</button><button data-k=".">.</button>
+        <button data-k="=" class="op">=</button>
+      </div>
+    </section>
+
+    <!-- TO-DO (shared by Irsyad and Ain) -->
+    <section id="todo" hidden>
+      <a class="back" href="#">‹ Back</a>
+      <header><h1 id="todo-title"></h1><p id="count"></p></header>
+      <form id="add" autocomplete="off">
+        <input id="text" type="text" placeholder="Add a task" aria-label="New task" required>
+        <button type="submit">Add</button>
+      </form>
+      <ul id="list"></ul>
+      <p id="empty" hidden>Nothing to do yet. Add a task above.</p>
+      <button id="clear" type="button" hidden>Clear completed</button>
+    </section>
+
+    <!-- SYNC SETTINGS -->
+    <section id="settings" hidden>
+      <a class="back" href="#">‹ Back</a>
+      <h1>Sync</h1>
+      <p class="sub">Save your lists to a private GitHub repository so they appear on every device.</p>
+      <form id="cfg" autocomplete="off">
+        <label>GitHub username<input id="owner" type="text" required></label>
+        <label>Repository name<input id="repo" type="text" required></label>
+        <label>Access token<input id="token" type="password" required></label>
+        <button type="submit">Save &amp; connect</button>
+      </form>
+      <button id="disconnect" type="button">Disconnect this device</button>
+      <p id="cfg-msg" aria-live="polite"></p>
+    </section>
+
+    <footer><span id="sync"></span> · <a href="#settings">Sync settings</a></footer>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>
