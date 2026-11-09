@@ -49,6 +49,12 @@
  ],
  "restock": [
   {
+   "id": 1794227864338,
+   "cat": "ain",
+   "text": "aaa",
+   "done": false
+  },
+  {
    "id": 1794213068892,
    "cat": "irsyad",
    "text": "Rak pinduoduo",
