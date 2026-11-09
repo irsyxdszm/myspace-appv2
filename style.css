@@ -169,3 +169,31 @@ a, button, input[type=date] { cursor: pointer; }
   #calc, #todo, #settings { max-width: 34rem; margin-left: auto; margin-right: auto; }
   #chat { max-width: 44rem; margin-left: auto; margin-right: auto; }
 }
+
+/* ===== Wallpaper ===== */
+:root {
+  --g-glow: radial-gradient(60rem 40rem at 8% -10%, #d8c3f4 0%, transparent 60%),
+            radial-gradient(50rem 40rem at 100% 12%, #f1cfe8 0%, transparent 55%),
+            radial-gradient(60rem 50rem at 50% 120%, #cbb8f0 0%, transparent 60%), #fbf6ea;
+  --g-dusk: linear-gradient(160deg, #cdbbf0 0%, #e4cdee 45%, #f7e3dc 100%);
+  --g-waves: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1440 900' preserveAspectRatio='xMidYMid slice'%3E%3Crect width='1440' height='900' fill='%23fbf6ea'/%3E%3Cpath d='M0 560 C240 480 480 640 720 560 S1200 480 1440 560 V900 H0Z' fill='%23e9ddf7'/%3E%3Cpath d='M0 660 C260 600 520 740 800 670 S1240 600 1440 680 V900 H0Z' fill='%23d8c3f4'/%3E%3Cpath d='M0 770 C300 720 560 830 860 780 S1280 730 1440 790 V900 H0Z' fill='%23c4b0f0'/%3E%3C/svg%3E") center / cover no-repeat;
+}
+body::before, body::after { content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none; background-size: cover; background-position: center; background-repeat: no-repeat; }
+html[data-wp="glow"] body::before  { background: var(--g-glow); }
+html[data-wp="dusk"] body::before  { background: var(--g-dusk); }
+html[data-wp="waves"] body::before { background: var(--g-waves); }
+html[data-wp="photo"] body::before { background-image: var(--wp-img); }
+html[data-wp="photo"] body::after  { background: rgba(251,246,234,.38); }   /* soft veil keeps text readable */
+html[data-wp]:not([data-wp="cream"]) { --muted: #5f5180; }
+
+#swatches { display: grid; grid-template-columns: repeat(2, 1fr); gap: .8rem; margin-bottom: 1rem; }
+.sw { height: 7rem; border-radius: 18px; border: 3px solid transparent; display: flex; align-items: flex-end; padding: .6rem;
+  background: var(--cream) center / cover no-repeat; box-shadow: inset 0 0 0 1px var(--line); color: var(--ink); font-weight: 600; text-align: left; }
+.sw span { background: rgba(255,255,255,.8); border-radius: 999px; padding: .15rem .7rem; font-size: .85rem; }
+.sw[data-s="glow"] { background: var(--g-glow); }
+.sw[data-s="dusk"] { background: var(--g-dusk); }
+.sw[data-s="waves"] { background: var(--g-waves); }
+.sw.on { border-color: var(--deep); }
+#pick { width: 100%; background: var(--deep); color: var(--cream); border: 0; border-radius: 12px; padding: .85rem; font-weight: 600; }
+#rmphoto { display: block; margin: 1rem auto 0; background: none; border: 0; color: var(--deep); text-decoration: underline; }
+#wp-msg { text-align: center; color: var(--muted); }

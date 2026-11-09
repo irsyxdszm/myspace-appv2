@@ -21,6 +21,7 @@ function route() {
   $('calc').hidden = page !== 'calc';
   $('todo').hidden = !(page in PEOPLE);
   $('settings').hidden = page !== 'settings';
+  $('wallpaper').hidden = page !== 'wallpaper';
   $('chat').hidden = page !== 'chat';
   clearInterval(chatTimer);
   if (page === 'chat') openChat();
@@ -398,6 +399,55 @@ $('keys').onclick = (e) => {
   $('display').textContent = calc.cur;
 };
 
+/* ---------- Wallpaper (saved per device) ---------- */
+const lsGet = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
+function applyWallpaper() {
+  const img = lsGet('wp-custom');
+  let st = lsGet('wp-style') || 'cream';
+  if (st === 'photo' && !img) st = 'cream';
+  document.documentElement.dataset.wp = st;
+  if (img) document.documentElement.style.setProperty('--wp-img', 'url("' + img + '")');
+  else document.documentElement.style.removeProperty('--wp-img');
+  const ph = document.querySelector('.sw[data-s="photo"]');
+  ph.hidden = !img;
+  if (img) ph.style.backgroundImage = 'url("' + img + '")';
+  $('rmphoto').hidden = !img;
+  document.querySelectorAll('.sw').forEach((b) => b.classList.toggle('on', b.dataset.s === st));
+}
+document.querySelectorAll('.sw').forEach((b) => {
+  b.onclick = () => { try { localStorage.setItem('wp-style', b.dataset.s); } catch {} applyWallpaper(); };
+});
+$('pick').onclick = () => $('file').click();
+$('rmphoto').onclick = () => {
+  try { localStorage.removeItem('wp-custom'); localStorage.setItem('wp-style', 'cream'); } catch {}
+  $('wp-msg').textContent = 'Photo removed.';
+  applyWallpaper();
+};
+$('file').onchange = (e) => {
+  const f = e.target.files[0];
+  if (!f) return;
+  const msg = $('wp-msg');
+  msg.textContent = 'Loading…';
+  const url = URL.createObjectURL(f);
+  const im = new Image();
+  im.onload = () => {
+    const sc = Math.min(1, 1600 / Math.max(im.width, im.height));   // shrink big photos
+    const cv = document.createElement('canvas');
+    cv.width = Math.round(im.width * sc); cv.height = Math.round(im.height * sc);
+    cv.getContext('2d').drawImage(im, 0, 0, cv.width, cv.height);
+    URL.revokeObjectURL(url);
+    try {
+      localStorage.setItem('wp-custom', cv.toDataURL('image/jpeg', 0.8));
+      localStorage.setItem('wp-style', 'photo');
+      msg.textContent = 'Wallpaper set ✓';
+    } catch { msg.textContent = 'That photo is too big to save here. Try a smaller one.'; }
+    applyWallpaper();
+    e.target.value = '';
+  };
+  im.onerror = () => { msg.textContent = "Couldn't read that image."; URL.revokeObjectURL(url); };
+  im.src = url;
+};
+
 /* Keyboard support for the calculator (desktop) */
 document.addEventListener('keydown', (e) => {
   if ($('calc').hidden || e.ctrlKey || e.metaKey || e.altKey) return;
@@ -416,6 +466,7 @@ document.addEventListener('keydown', (e) => {
 });
 
 /* ---------- Start ---------- */
+applyWallpaper();
 route();
 status(read('gh-config') ? 'Syncing…' : 'Saved on this device only');
 sync();
