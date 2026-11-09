@@ -3,14 +3,6 @@
  "ain": [],
  "events": [
   {
-   "id": 1794211039153,
-   "date": "2026-11-20",
-   "time": "09:00",
-   "title": "Locum radziah",
-   "kind": "event",
-   "done": false
-  },
-  {
    "id": 1794212672994,
    "date": "2026-11-14",
    "time": "20:00",
@@ -35,5 +27,6 @@
    "done": false
   }
  ],
+ "restock": [],
  "start": "2024-11-30"
 }
