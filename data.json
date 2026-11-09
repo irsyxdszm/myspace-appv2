@@ -25,6 +25,14 @@
    "title": "Service e.mas",
    "kind": "event",
    "done": false
+  },
+  {
+   "id": 1794212816256,
+   "date": "2026-12-20",
+   "time": "08:00",
+   "title": "Wedding Imran",
+   "kind": "event",
+   "done": false
   }
  ],
  "start": "2024-11-30"
