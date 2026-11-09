@@ -1,32 +1,57 @@
 const $ = (id) => document.getElementById(id);
 const PEOPLE = { irsyad: 'Irsyad', ain: 'Ain' };
+const KEYS = Object.keys(PEOPLE);
 
 /* ---------- Saved data (on this device) ---------- */
 const read = (k) => { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } };
 const write = (k, v) => { try { localStorage.setItem(k, typeof v === 'string' ? v : JSON.stringify(v)); } catch {} };
+const lsGet = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
 const clean = (d) => ({
   irsyad: Array.isArray(d && d.irsyad) ? d.irsyad : [],
   ain: Array.isArray(d && d.ain) ? d.ain : [],
+  events: Array.isArray(d && d.events) ? d.events : [],
   start: typeof (d && d.start) === 'string' ? d.start : '',
 });
-// Also picks up lists saved by the older version of the app.
+// Also picks up lists saved by older versions of the app.
 let data = clean(read('myspace-data') || { irsyad: read('tasks-irsyad'), ain: read('tasks-ain') });
 const isDirty = () => localStorage.getItem('myspace-dirty') === '1';
 
+/* ---------- Small helpers ---------- */
+const ymd = (d) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+const toDate = (s) => new Date(s + 'T00:00:00');
+const longDay = (s) => toDate(s).toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' });
+const shortDay = (s) => toDate(s).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
+const fmtTime = (t) => (t ? new Date('1970-01-01T' + t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '');
+const byWhen = (a, b) => a.date.localeCompare(b.date) || (a.time || '99:99').localeCompare(b.time || '99:99');
+const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; };
+
+let taskFilter = 'all';
+let taskFor = lsGet('task-for') || 'irsyad';
+let selDay = ymd(new Date());
+let calMonth = new Date(); calMonth.setDate(1);
+function goDay(date) { selDay = date; const d = toDate(date); calMonth = new Date(d.getFullYear(), d.getMonth(), 1); }
+
+function changed() {                       // call after any edit
+  write('myspace-data', data);
+  write('myspace-dirty', '1');
+  schedule();
+}
+
 /* ---------- Screens ---------- */
-let person = null;
+const VIEWS = ['home', 'cal', 'tasks', 'chat', 'settings', 'wallpaper'];
 function route() {
-  const page = location.hash.slice(1);
-  $('home').hidden = page !== '';
-  $('calc').hidden = page !== 'calc';
-  $('todo').hidden = !(page in PEOPLE);
-  $('settings').hidden = page !== 'settings';
-  $('wallpaper').hidden = page !== 'wallpaper';
-  $('chat').hidden = page !== 'chat';
+  let page = location.hash.slice(1);
+  if (page === 'irsyad' || page === 'ain') { taskFilter = page; page = 'tasks'; }   // links from the older version
+  if (!VIEWS.includes(page || 'home')) page = '';
+  const view = page || 'home';
+  VIEWS.forEach((v) => { $(v).hidden = v !== view; });
+  document.querySelectorAll('#tabs a').forEach((a) => a.classList.toggle('on', a.dataset.p === page));
   clearInterval(chatTimer);
-  if (page === 'chat') openChat();
-  if (page in PEOPLE) openTodo(page);
-  if (page === 'settings') {
+  if (view === 'home') { renderHome(); chatSync(); }
+  if (view === 'cal') renderCal();
+  if (view === 'tasks') renderTasks();
+  if (view === 'chat') openChat();
+  if (view === 'settings') {
     const c = read('gh-config');
     $('owner').value = c ? c.owner : '';
     $('repo').value = c ? c.repo : '';
@@ -34,57 +59,205 @@ function route() {
     $('cfg-msg').textContent = c ? 'Connected. Enter a new token only if you want to change it.' : '';
     $('token').required = !c;
   }
-  document.querySelectorAll('#tabs a').forEach((a) => a.classList.toggle('on', a.dataset.p === page));
-  if (page !== '' && $('q').value) { $('q').value = ''; $('q').oninput(); }
-  if (page === '') { renderHome(); chatSync(); }
+  if (view !== 'home' && $('q').value) { $('q').value = ''; $('q').oninput(); }
   window.scrollTo(0, 0);
 }
 window.addEventListener('hashchange', route);
 
-/* ---------- To-do lists ---------- */
-function openTodo(who) {
-  person = who;
-  $('todo-title').textContent = PEOPLE[who] + "'s tasks";
-  renderTodo();
-}
-function changed() {                       // call after any edit
-  write('myspace-data', data);
-  write('myspace-dirty', '1');
-  schedule();
-}
-function renderTodo() {
-  const tasks = data[person];
+/* ---------- Tasks (Irsyad and Ain in one list) ---------- */
+function renderTasks() {
+  document.querySelectorAll('#tfilter button').forEach((b) => b.classList.toggle('on', b.dataset.f === taskFilter));
+  document.querySelectorAll('#tfor button').forEach((b) => b.classList.toggle('on', b.dataset.k === taskFor));
+  const rows = [];
+  for (const k of KEYS) for (const t of data[k]) rows.push({ k, t });
+  rows.sort((a, b) => (a.t.done - b.t.done) || (b.t.id - a.t.id));      // open tasks first, newest first
+  const shown = taskFilter === 'all' ? rows : rows.filter((r) => r.k === taskFilter);
   const list = $('list');
   list.innerHTML = '';
-  for (const t of tasks) {
-    const li = document.createElement('li');
-    if (t.done) li.className = 'done';
-    const box = document.createElement('input');
+  for (const { k, t } of shown) {
+    const li = el('li', t.done ? 'done' : '');
+    const box = el('input');
     box.type = 'checkbox'; box.checked = t.done;
     box.setAttribute('aria-label', 'Mark done: ' + t.text);
-    box.onchange = () => { t.done = box.checked; changed(); renderTodo(); };
-    const label = document.createElement('span');
-    label.textContent = t.text;
-    const del = document.createElement('button');
-    del.className = 'del'; del.type = 'button'; del.textContent = '×';
+    box.onchange = () => { t.done = box.checked; changed(); renderTasks(); };
+    const label = el('span', '', t.text);
+    const who = el('i', 'av', PEOPLE[k][0]);
+    who.title = PEOPLE[k];
+    const del = el('button', 'del', '×');
+    del.type = 'button';
     del.setAttribute('aria-label', 'Delete: ' + t.text);
-    del.onclick = () => { data[person] = data[person].filter((x) => x.id !== t.id); changed(); renderTodo(); };
-    li.append(box, label, del);
+    del.onclick = () => { data[k] = data[k].filter((x) => x.id !== t.id); changed(); renderTasks(); };
+    li.append(box, label, who, del);
     list.append(li);
   }
-  $('count').textContent = tasks.length ? tasks.filter((t) => !t.done).length + ' open' : '';
-  $('empty').hidden = tasks.length > 0;
-  $('clear').hidden = !tasks.some((t) => t.done);
+  const open = shown.filter((r) => !r.t.done).length;
+  $('count').textContent = shown.length ? open + ' open' : '';
+  $('empty').hidden = shown.length > 0;
+  $('clear').hidden = !rows.some((r) => r.t.done);
 }
+document.querySelectorAll('#tfilter button').forEach((b) => { b.onclick = () => { taskFilter = b.dataset.f; renderTasks(); }; });
+document.querySelectorAll('#tfor button').forEach((b) => {
+  b.onclick = () => { taskFor = b.dataset.k; write('task-for', taskFor); renderTasks(); };
+});
 $('add').onsubmit = (e) => {
   e.preventDefault();
   const text = $('text').value.trim();
   if (!text) return;
-  data[person].unshift({ id: Date.now(), text, done: false });
+  data[taskFor].unshift({ id: Date.now(), text, done: false });
   $('text').value = '';
-  changed(); renderTodo();
+  changed(); renderTasks();
 };
-$('clear').onclick = () => { data[person] = data[person].filter((t) => !t.done); changed(); renderTodo(); };
+$('clear').onclick = () => { for (const k of KEYS) data[k] = data[k].filter((t) => !t.done); changed(); renderTasks(); };
+
+/* ---------- Calendar (events and reminders by date) ---------- */
+function renderCal() {
+  const y = calMonth.getFullYear(), m = calMonth.getMonth();
+  $('cal-title').textContent = calMonth.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+  const blanks = new Date(y, m, 1).getDay(), days = new Date(y, m + 1, 0).getDate();
+  const counts = {};
+  for (const e of data.events) counts[e.date] = (counts[e.date] || 0) + 1;
+  const todayKey = ymd(new Date());
+  const grid = $('cal-grid');
+  grid.innerHTML = '';
+  for (let i = 0; i < blanks; i++) grid.append(el('span'));
+  for (let d = 1; d <= days; d++) {
+    const key = ymd(new Date(y, m, d));
+    const b = el('button', 'day' + (key === todayKey ? ' today' : '') + (key === selDay ? ' sel' : ''), String(d));
+    b.type = 'button';
+    b.setAttribute('aria-label', longDay(key) + (counts[key] ? ', ' + counts[key] + ' planned' : ''));
+    if (counts[key]) b.append(el('i', 'dot'));
+    b.onclick = () => { selDay = key; renderCal(); };
+    grid.append(b);
+  }
+  renderDay();
+}
+function renderDay() {
+  $('day-title').textContent = longDay(selDay);
+  const items = data.events.filter((e) => e.date === selDay).sort(byWhen);
+  const ul = $('day-list');
+  ul.innerHTML = '';
+  for (const e of items) {
+    const li = el('li', e.done ? 'done' : '');
+    let lead;
+    if (e.kind === 'reminder') {
+      lead = el('input');
+      lead.type = 'checkbox'; lead.checked = !!e.done;
+      lead.setAttribute('aria-label', 'Mark done: ' + e.title);
+      lead.onchange = () => { e.done = lead.checked; changed(); renderDay(); };
+    } else lead = el('i', 'evdot');
+    const body = el('span', '', e.title);
+    body.append(el('small', '', [fmtTime(e.time), e.kind === 'reminder' ? 'Reminder' : 'Event'].filter(Boolean).join(' · ')));
+    const del = el('button', 'del', '×');
+    del.type = 'button';
+    del.setAttribute('aria-label', 'Delete: ' + e.title);
+    del.onclick = () => { data.events = data.events.filter((x) => x.id !== e.id); changed(); renderCal(); };
+    li.append(lead, body, del);
+    ul.append(li);
+  }
+  $('day-empty').hidden = items.length > 0;
+}
+$('prev').onclick = () => { calMonth = new Date(calMonth.getFullYear(), calMonth.getMonth() - 1, 1); renderCal(); };
+$('next').onclick = () => { calMonth = new Date(calMonth.getFullYear(), calMonth.getMonth() + 1, 1); renderCal(); };
+$('todaybtn').onclick = () => { goDay(ymd(new Date())); renderCal(); };
+$('evform').onsubmit = (e) => {
+  e.preventDefault();
+  const title = $('evtitle').value.trim();
+  if (!title) return;
+  data.events.push({ id: Date.now(), date: selDay, time: $('evtime').value, title, kind: $('evkind').value, done: false });
+  $('evtitle').value = ''; $('evtime').value = '';
+  changed(); renderCal();
+};
+
+/* ---------- Home ---------- */
+function fill(box, rows, emptyText) {
+  box.innerHTML = '';
+  if (!rows.length) box.append(el('p', 'muted', emptyText));
+  else box.append(...rows);
+}
+function evRow(e, extra) {                 // one event or reminder as a card
+  const row = el('div', 'trow' + (e.done ? ' done' : ''));
+  let lead;
+  if (e.kind === 'reminder') {
+    lead = el('button', 'circ' + (e.done ? ' tick' : ''));
+    lead.type = 'button';
+    lead.setAttribute('aria-label', (e.done ? 'Mark not done: ' : 'Mark done: ') + e.title);
+    lead.onclick = () => { e.done = !e.done; changed(); renderHome(); };
+  } else lead = el('span', 'circ ev');
+  const a = el('a', 'tbody');
+  a.href = '#cal';
+  a.onclick = () => goDay(e.date);
+  a.append(el('b', '', e.title), el('small', '', [extra, fmtTime(e.time), e.kind === 'reminder' ? 'Reminder' : 'Event'].filter(Boolean).join(' · ')));
+  row.append(lead, a);
+  return row;
+}
+function renderHome() {
+  const todayKey = ymd(new Date());
+  $('today').textContent = longDay(todayKey);
+  if (data.start) {
+    const d = Math.floor((new Date().setHours(0, 0, 0, 0) - toDate(data.start)) / 864e5);
+    $('days').textContent = Math.max(0, d).toLocaleString();
+  } else $('days').textContent = '–';
+  $('startdate').value = data.start || '';
+
+  const other = me === 'irsyad' ? 'Ain' : me === 'ain' ? 'Irsyad' : null;
+  $('chat-title').textContent = other ? 'Chat with ' + other : 'Chat';
+  const last = msgs[msgs.length - 1];
+  $('chat-prev').textContent = last ? last.text : 'Say hello!';
+
+  const end = new Date(); end.setDate(end.getDate() + 14);
+  const endKey = ymd(end);
+  const todays = data.events.filter((e) => e.date === todayKey || (e.kind === 'reminder' && !e.done && e.date < todayKey)).sort(byWhen);
+  fill($('home-today'), todays.map((e) => evRow(e, e.date < todayKey ? 'Overdue · ' + shortDay(e.date) : '')), 'Nothing planned for today.');
+  const soon = data.events.filter((e) => e.date > todayKey && e.date <= endKey).sort(byWhen).slice(0, 5);
+  fill($('home-soon'), soon.map((e) => evRow(e, shortDay(e.date))), 'Nothing in the next two weeks.');
+
+  const rows = [];
+  for (const k of KEYS) for (const t of data[k]) if (!t.done) rows.push({ k, t });
+  rows.sort((a, b) => b.t.id - a.t.id);
+  fill($('home-tasks'), rows.slice(0, 6).map(({ k, t }) => {
+    const row = el('div', 'trow');
+    const c = el('button', 'circ');
+    c.type = 'button';
+    c.setAttribute('aria-label', 'Mark done: ' + t.text);
+    c.onclick = () => { t.done = true; changed(); renderHome(); };
+    const a = el('a', 'tbody');
+    a.href = '#tasks';
+    a.onclick = () => { taskFilter = 'all'; };
+    a.append(el('b', '', t.text), el('small', '', PEOPLE[k]));
+    row.append(c, a, el('i', 'av', PEOPLE[k][0]));
+    return row;
+  }), 'All clear. Add tasks in the Tasks tab.');
+}
+$('startdate').onchange = (e) => { data.start = e.target.value; changed(); renderHome(); };
+
+$('q').oninput = () => {
+  const q = $('q').value.trim().toLowerCase();
+  $('dash').hidden = !!q;
+  $('results').hidden = !q;
+  const box = $('results');
+  box.innerHTML = '';
+  if (!q) return;
+  const hits = [];
+  for (const k of KEYS) for (const t of data[k]) {
+    if (t.text.toLowerCase().includes(q)) hits.push({ href: '#tasks', title: t.text, sub: PEOPLE[k] + "'s task" + (t.done ? ' (done)' : '') });
+  }
+  for (const e of data.events) {
+    if (e.title.toLowerCase().includes(q)) hits.push({ href: '#cal', title: e.title, sub: (e.kind === 'reminder' ? 'Reminder' : 'Event') + ' · ' + shortDay(e.date), day: e.date });
+  }
+  for (const m of msgs) {
+    if (m.text.toLowerCase().includes(q)) hits.push({ href: '#chat', title: m.text, sub: 'Chat · ' + (PEOPLE[m.from] || m.from) });
+  }
+  if (!hits.length) box.append(el('p', 'muted', 'No matches.'));
+  for (const h of hits.slice(0, 30)) {
+    const a = el('a', 'trow');
+    a.href = h.href;
+    if (h.day) a.onclick = () => goDay(h.day);
+    const wrap = el('span', 'tbody');
+    wrap.append(el('b', '', h.title), el('small', '', h.sub));
+    a.append(wrap);
+    box.append(a);
+  }
+};
 
 /* ---------- GitHub sync ---------- */
 const API = (c, f = 'data.json') => `https://api.github.com/repos/${c.owner}/${c.repo}/contents/${f}`;
@@ -139,7 +312,7 @@ async function sync() {
       if (!isDirty()) { data = clean(JSON.parse(dec(j.content))); write('myspace-data', data); route(); }
     } else if (r.status === 404) {
       sha = null;
-      if (data.irsyad.length || data.ain.length) write('myspace-dirty', '1');
+      if (data.irsyad.length || data.ain.length || data.events.length) write('myspace-dirty', '1');
     } else throw new Error(r.status);
     if (isDirty()) await put(c);
     status('Saved to GitHub ✓');
@@ -184,8 +357,7 @@ $('disconnect').onclick = () => {
 
 /* ---------- Chat (messages.json in the same GitHub repo) ---------- */
 let msgs = read('myspace-chat') || [];
-let me = null;
-try { me = localStorage.getItem('chat-me'); } catch {}
+let me = lsGet('chat-me');
 let chatTimer = null, chatBusy = false, chatAgain = false;
 
 const byTime = (a, b) => a.t - b.t || (a.id < b.id ? -1 : 1);
@@ -201,14 +373,12 @@ function renderChat() {
   const stick = box.scrollHeight - box.scrollTop - box.clientHeight < 80;
   box.innerHTML = '';
   for (const m of msgs) {
-    const d = document.createElement('div');
-    d.className = 'msg ' + (m.from === me ? 'mine' : 'theirs');
-    const n = document.createElement('small');
-    n.textContent = (PEOPLE[m.from] || m.from) + ' · ' +
-      new Date(m.t).toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
-    const p = document.createElement('p');
-    p.textContent = m.text;
-    d.append(n, p);
+    const d = el('div', 'msg ' + (m.from === me ? 'mine' : 'theirs'));
+    d.append(
+      el('small', '', (PEOPLE[m.from] || m.from) + ' · ' +
+        new Date(m.t).toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })),
+      el('p', '', m.text)
+    );
     box.append(d);
   }
   $('chat-empty').hidden = msgs.length > 0;
@@ -265,11 +435,7 @@ async function chatSync() {
 }
 
 document.querySelectorAll('#who button').forEach((b) => {
-  b.onclick = () => {
-    me = b.dataset.who;
-    try { localStorage.setItem('chat-me', me); } catch {}
-    renderChat();
-  };
+  b.onclick = () => { me = b.dataset.who; write('chat-me', me); renderChat(); };
 });
 
 $('send').onsubmit = (e) => {
@@ -285,122 +451,7 @@ $('send').onsubmit = (e) => {
   chatSync();
 };
 
-/* ---------- Home ---------- */
-function renderHome() {
-  $('today').textContent = new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' });
-  if (data.start) {
-    const d = Math.floor((new Date().setHours(0, 0, 0, 0) - new Date(data.start + 'T00:00:00')) / 864e5);
-    $('days').textContent = Math.max(0, d).toLocaleString();
-  } else $('days').textContent = '–';
-  $('startdate').value = data.start || '';
-
-  const other = me === 'irsyad' ? 'Ain' : me === 'ain' ? 'Irsyad' : null;
-  $('chat-title').textContent = other ? 'Chat with ' + other : 'Chat';
-  const last = msgs[msgs.length - 1];
-  $('chat-prev').textContent = last ? last.text : 'Say hello!';
-
-  const rows = [];
-  for (const k of Object.keys(PEOPLE)) for (const t of data[k]) if (!t.done) rows.push({ k, t });
-  rows.sort((a, b) => b.t.id - a.t.id);
-  const box = $('home-tasks');
-  box.innerHTML = '';
-  if (!rows.length) {
-    const p = document.createElement('p');
-    p.className = 'muted';
-    p.textContent = 'All clear. Add tasks from the Irsyad or Ain tabs.';
-    box.append(p);
-  }
-  for (const { k, t } of rows.slice(0, 6)) {
-    const row = document.createElement('div');
-    row.className = 'trow';
-    const c = document.createElement('button');
-    c.className = 'circ'; c.type = 'button';
-    c.setAttribute('aria-label', 'Mark done: ' + t.text);
-    c.onclick = () => { t.done = true; changed(); renderHome(); };
-    const a = document.createElement('a');
-    a.className = 'tbody'; a.href = '#' + k;
-    const b = document.createElement('b'); b.textContent = t.text;
-    const sm = document.createElement('small'); sm.textContent = PEOPLE[k];
-    a.append(b, sm);
-    const av = document.createElement('i');
-    av.className = 'av'; av.textContent = PEOPLE[k][0];
-    row.append(c, a, av);
-    box.append(row);
-  }
-}
-
-$('startdate').onchange = (e) => { data.start = e.target.value; changed(); renderHome(); };
-
-$('q').oninput = () => {
-  const q = $('q').value.trim().toLowerCase();
-  $('dash').hidden = !!q;
-  $('results').hidden = !q;
-  const box = $('results');
-  box.innerHTML = '';
-  if (!q) return;
-  const hits = [];
-  for (const k of Object.keys(PEOPLE)) for (const t of data[k]) {
-    if (t.text.toLowerCase().includes(q)) hits.push({ href: '#' + k, title: t.text, sub: PEOPLE[k] + "'s task" + (t.done ? ' (done)' : '') });
-  }
-  for (const m of msgs) {
-    if (m.text.toLowerCase().includes(q)) hits.push({ href: '#chat', title: m.text, sub: 'Chat · ' + (PEOPLE[m.from] || m.from) });
-  }
-  if (!hits.length) {
-    const p = document.createElement('p');
-    p.className = 'muted'; p.textContent = 'No matches.';
-    box.append(p);
-  }
-  for (const h of hits.slice(0, 30)) {
-    const a = document.createElement('a');
-    a.className = 'trow'; a.href = h.href;
-    const wrap = document.createElement('span');
-    wrap.className = 'tbody';
-    const b = document.createElement('b'); b.textContent = h.title;
-    const sm = document.createElement('small'); sm.textContent = h.sub;
-    wrap.append(b, sm);
-    a.append(wrap);
-    box.append(a);
-  }
-};
-
-/* ---------- Calculator ---------- */
-const calc = { cur: '0', prev: null, op: null, fresh: false };
-const fmt = (n) => (isFinite(n) ? String(parseFloat(n.toPrecision(12))) : 'Error');
-function compute() {
-  const a = parseFloat(calc.prev), b = parseFloat(calc.cur);
-  if (calc.op === '+') return a + b;
-  if (calc.op === '−') return a - b;
-  if (calc.op === '×') return a * b;
-  if (calc.op === '÷') return b === 0 ? NaN : a / b;
-  return b;
-}
-$('keys').onclick = (e) => {
-  const k = e.target.dataset.k;
-  if (!k) return;
-  if (calc.cur === 'Error' && k !== 'C') calc.cur = '0';
-  if (k >= '0' && k <= '9') {
-    calc.cur = (calc.fresh || calc.cur === '0') ? k : calc.cur + k;
-    calc.fresh = false;
-  } else if (k === '.') {
-    if (calc.fresh) { calc.cur = '0.'; calc.fresh = false; }
-    else if (!calc.cur.includes('.')) calc.cur += '.';
-  } else if (k === 'C') {
-    Object.assign(calc, { cur: '0', prev: null, op: null, fresh: false });
-  } else if (k === '±') {
-    if (calc.cur !== '0') calc.cur = calc.cur.startsWith('-') ? calc.cur.slice(1) : '-' + calc.cur;
-  } else if (k === '%') {
-    calc.cur = fmt(parseFloat(calc.cur) / 100);
-  } else if (k === '=') {
-    if (calc.op) { calc.cur = fmt(compute()); calc.prev = null; calc.op = null; calc.fresh = true; }
-  } else {
-    if (calc.op && !calc.fresh) calc.cur = fmt(compute());
-    calc.prev = calc.cur; calc.op = k; calc.fresh = true;
-  }
-  $('display').textContent = calc.cur;
-};
-
 /* ---------- Wallpaper (saved per device) ---------- */
-const lsGet = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
 function applyWallpaper() {
   const img = lsGet('wp-custom');
   let st = lsGet('wp-style') || 'cream';
@@ -415,11 +466,12 @@ function applyWallpaper() {
   document.querySelectorAll('.sw').forEach((b) => b.classList.toggle('on', b.dataset.s === st));
 }
 document.querySelectorAll('.sw').forEach((b) => {
-  b.onclick = () => { try { localStorage.setItem('wp-style', b.dataset.s); } catch {} applyWallpaper(); };
+  b.onclick = () => { write('wp-style', b.dataset.s); applyWallpaper(); };
 });
 $('pick').onclick = () => $('file').click();
 $('rmphoto').onclick = () => {
-  try { localStorage.removeItem('wp-custom'); localStorage.setItem('wp-style', 'cream'); } catch {}
+  try { localStorage.removeItem('wp-custom'); } catch {}
+  write('wp-style', 'cream');
   $('wp-msg').textContent = 'Photo removed.';
   applyWallpaper();
 };
@@ -447,23 +499,6 @@ $('file').onchange = (e) => {
   im.onerror = () => { msg.textContent = "Couldn't read that image."; URL.revokeObjectURL(url); };
   im.src = url;
 };
-
-/* Keyboard support for the calculator (desktop) */
-document.addEventListener('keydown', (e) => {
-  if ($('calc').hidden || e.ctrlKey || e.metaKey || e.altKey) return;
-  if (e.key === 'Backspace') {
-    e.preventDefault();
-    if (!calc.fresh && calc.cur !== 'Error') {
-      calc.cur = calc.cur.length > 1 && !(calc.cur.length === 2 && calc.cur[0] === '-') ? calc.cur.slice(0, -1) : '0';
-      $('display').textContent = calc.cur;
-    }
-    return;
-  }
-  const map = { '*': '×', x: '×', X: '×', '/': '÷', '-': '−', Enter: '=', ',': '.', Escape: 'C', c: 'C', C: 'C' };
-  const k = map[e.key] || e.key;
-  const btn = document.querySelector('#keys [data-k="' + k + '"]');
-  if (btn) { e.preventDefault(); btn.click(); }
-});
 
 /* ---------- Start ---------- */
 applyWallpaper();
