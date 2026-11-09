@@ -17,6 +17,14 @@
    "title": "Locum Madeena",
    "kind": "event",
    "done": false
+  },
+  {
+   "id": 1794212723810,
+   "date": "2026-11-14",
+   "time": "09:00",
+   "title": "Service e.mas",
+   "kind": "event",
+   "done": false
   }
  ],
  "start": "2024-11-30"
