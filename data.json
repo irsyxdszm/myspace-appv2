@@ -36,6 +36,13 @@
    "done": false
   }
  ],
- "restock": [],
+ "restock": [
+  {
+   "id": 1794213068892,
+   "cat": "irsyad",
+   "text": "Rak pinduoduo",
+   "done": false
+  }
+ ],
  "start": "2024-11-30"
 }
