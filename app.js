@@ -398,6 +398,23 @@ $('keys').onclick = (e) => {
   $('display').textContent = calc.cur;
 };
 
+/* Keyboard support for the calculator (desktop) */
+document.addEventListener('keydown', (e) => {
+  if ($('calc').hidden || e.ctrlKey || e.metaKey || e.altKey) return;
+  if (e.key === 'Backspace') {
+    e.preventDefault();
+    if (!calc.fresh && calc.cur !== 'Error') {
+      calc.cur = calc.cur.length > 1 && !(calc.cur.length === 2 && calc.cur[0] === '-') ? calc.cur.slice(0, -1) : '0';
+      $('display').textContent = calc.cur;
+    }
+    return;
+  }
+  const map = { '*': '×', x: '×', X: '×', '/': '÷', '-': '−', Enter: '=', ',': '.', Escape: 'C', c: 'C', C: 'C' };
+  const k = map[e.key] || e.key;
+  const btn = document.querySelector('#keys [data-k="' + k + '"]');
+  if (btn) { e.preventDefault(); btn.click(); }
+});
+
 /* ---------- Start ---------- */
 route();
 status(read('gh-config') ? 'Syncing…' : 'Saved on this device only');

@@ -145,3 +145,27 @@ h2 { font-size: 1.5rem; margin: 1.4rem 0 .7rem; }
   border-radius: 22px; color: var(--muted); text-decoration: none; font-size: .72rem; font-weight: 600; }
 #tabs a.on { background: var(--lilac-soft); color: var(--deep); }
 .ini { display: grid; place-items: center; width: 24px; height: 24px; border: 1.8px solid currentColor; border-radius: 50%; font-size: .78rem; line-height: 1; }
+
+/* ===== Desktop and short screens ===== */
+a, button, input[type=date] { cursor: pointer; }
+#tabs a:hover { background: var(--lilac-soft); color: var(--deep); }
+.chatcard:hover, .trow:hover { box-shadow: 0 4px 18px rgba(122,85,184,.22); }
+.keys button:hover { filter: brightness(.96); }
+.circ:hover { background: var(--lilac-soft); }
+#msgs { height: calc(100vh - 22rem); height: calc(100dvh - 22rem); min-height: 12rem; }
+@media (max-width: 600px) { #msgs { height: calc(100vh - 24.5rem); height: calc(100dvh - 24.5rem); } }
+@media (max-height: 760px) {
+  .keys { gap: .5rem; }
+  .keys button { height: 3.2rem; font-size: 1.3rem; }
+  #display { min-height: 4rem; padding: .7rem 1rem; font-size: 2.2rem; margin: .5rem 0 .75rem; }
+  .big { font-size: 3.6rem; }
+}
+@media (min-width: 900px) {
+  main { max-width: 62rem; }
+  #dash { display: grid; grid-template-columns: 1fr 1fr; gap: 1.75rem; align-items: start; }
+  .lead { display: grid; gap: 1rem; }
+  .lead .hero { margin-bottom: 0; }
+  .tasks h2 { margin-top: 0; }
+  #calc, #todo, #settings { max-width: 34rem; margin-left: auto; margin-right: auto; }
+  #chat { max-width: 44rem; margin-left: auto; margin-right: auto; }
+}
