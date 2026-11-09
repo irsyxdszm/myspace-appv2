@@ -1,5 +1,5 @@
 // Bump this version whenever you change any cached file.
-const CACHE = 'myspace-v2';
+const CACHE = 'myspace-v4';
 const FILES = ['./', 'index.html', 'style.css', 'app.js', 'manifest.json',
                'icons/icon-192.png', 'icons/icon-512.png'];
 

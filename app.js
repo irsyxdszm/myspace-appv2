@@ -7,6 +7,7 @@ const write = (k, v) => { try { localStorage.setItem(k, typeof v === 'string' ? 
 const clean = (d) => ({
   irsyad: Array.isArray(d && d.irsyad) ? d.irsyad : [],
   ain: Array.isArray(d && d.ain) ? d.ain : [],
+  start: typeof (d && d.start) === 'string' ? d.start : '',
 });
 // Also picks up lists saved by the older version of the app.
 let data = clean(read('myspace-data') || { irsyad: read('tasks-irsyad'), ain: read('tasks-ain') });
@@ -20,6 +21,9 @@ function route() {
   $('calc').hidden = page !== 'calc';
   $('todo').hidden = !(page in PEOPLE);
   $('settings').hidden = page !== 'settings';
+  $('chat').hidden = page !== 'chat';
+  clearInterval(chatTimer);
+  if (page === 'chat') openChat();
   if (page in PEOPLE) openTodo(page);
   if (page === 'settings') {
     const c = read('gh-config');
@@ -29,6 +33,9 @@ function route() {
     $('cfg-msg').textContent = c ? 'Connected. Enter a new token only if you want to change it.' : '';
     $('token').required = !c;
   }
+  document.querySelectorAll('#tabs a').forEach((a) => a.classList.toggle('on', a.dataset.p === page));
+  if (page !== '' && $('q').value) { $('q').value = ''; $('q').oninput(); }
+  if (page === '') { renderHome(); chatSync(); }
   window.scrollTo(0, 0);
 }
 window.addEventListener('hashchange', route);
@@ -79,7 +86,7 @@ $('add').onsubmit = (e) => {
 $('clear').onclick = () => { data[person] = data[person].filter((t) => !t.done); changed(); renderTodo(); };
 
 /* ---------- GitHub sync ---------- */
-const API = (c) => `https://api.github.com/repos/${c.owner}/${c.repo}/contents/data.json`;
+const API = (c, f = 'data.json') => `https://api.github.com/repos/${c.owner}/${c.repo}/contents/${f}`;
 const hdr = (c) => ({ Authorization: 'Bearer ' + c.token, Accept: 'application/vnd.github+json' });
 const enc = (s) => btoa(unescape(encodeURIComponent(s)));          // text -> base64
 const dec = (s) => decodeURIComponent(escape(atob(s.replace(/\s/g, '')))); // base64 -> text
@@ -137,7 +144,7 @@ async function sync() {
     status('Saved to GitHub ✓');
   } catch (e) {
     failed = true;
-    status(navigator.onLine ? 'Sync problem – check Sync settings' : 'Offline – will save when online');
+    status(navigator.onLine ? 'Sync problem (' + e.message + ') – check Sync settings' : 'Offline – will save when online');
   }
   busy = false;
   if (!failed && isDirty()) schedule();    // edits made while we were saving
@@ -172,6 +179,187 @@ $('disconnect').onclick = () => {
   sha = null;
   $('cfg-msg').textContent = 'Disconnected. Lists now save on this device only.';
   status('Saved on this device only');
+};
+
+/* ---------- Chat (messages.json in the same GitHub repo) ---------- */
+let msgs = read('myspace-chat') || [];
+let me = null;
+try { me = localStorage.getItem('chat-me'); } catch {}
+let chatTimer = null, chatBusy = false, chatAgain = false;
+
+const byTime = (a, b) => a.t - b.t || (a.id < b.id ? -1 : 1);
+const merge = (a, b) => {                  // combine two lists, no duplicates
+  const m = new Map();
+  for (const x of [...a, ...b]) m.set(x.id, x);
+  return [...m.values()].sort(byTime);
+};
+
+function renderChat() {
+  document.querySelectorAll('#who button').forEach((b) => b.classList.toggle('on', b.dataset.who === me));
+  const box = $('msgs');
+  const stick = box.scrollHeight - box.scrollTop - box.clientHeight < 80;
+  box.innerHTML = '';
+  for (const m of msgs) {
+    const d = document.createElement('div');
+    d.className = 'msg ' + (m.from === me ? 'mine' : 'theirs');
+    const n = document.createElement('small');
+    n.textContent = (PEOPLE[m.from] || m.from) + ' · ' +
+      new Date(m.t).toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+    const p = document.createElement('p');
+    p.textContent = m.text;
+    d.append(n, p);
+    box.append(d);
+  }
+  $('chat-empty').hidden = msgs.length > 0;
+  if (stick) box.scrollTop = box.scrollHeight;
+}
+
+function openChat() {
+  renderChat();
+  $('msgs').scrollTop = $('msgs').scrollHeight;
+  $('chat-note').textContent = read('gh-config') ? '' : 'Connect Sync (home screen) to chat across devices.';
+  chatSync();
+  chatTimer = setInterval(chatSync, 6000);   // check for new messages every 6 seconds
+}
+
+async function ghGet(c, file) {
+  const r = await fetch(API(c, file), { headers: hdr(c), cache: 'no-store' });
+  if (r.status === 404) return { sha: null, json: null };
+  if (!r.ok) throw new Error(r.status);
+  const j = await r.json();
+  return { sha: j.sha, json: JSON.parse(dec(j.content)) };
+}
+
+async function chatSync() {
+  const c = read('gh-config');
+  if (!c) return;
+  if (chatBusy) { chatAgain = true; return; }
+  chatBusy = true; chatAgain = false;
+  try {
+    for (let i = 0; i < 3; i++) {
+      const { sha: s, json } = await ghGet(c, 'messages.json');
+      const remote = Array.isArray(json) ? json : [];
+      const merged = merge(remote, msgs);
+      msgs = merged;
+      write('myspace-chat', msgs);
+      if (merged.length === remote.length) break;          // nothing new to send
+      const body = { message: 'New message', content: enc(JSON.stringify(merged, null, 1)) };
+      if (s) body.sha = s;
+      const r = await fetch(API(c, 'messages.json'), {
+        method: 'PUT', headers: { ...hdr(c), 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+      });
+      if (r.ok) break;
+      if (r.status !== 409 && r.status !== 422) throw new Error(r.status);  // else: someone wrote first, retry
+    }
+    if (!$('chat').hidden) { renderChat(); $('chat-note').textContent = ''; }
+    if (!$('home').hidden) renderHome();
+  } catch (e) {
+    if (!$('chat').hidden) {
+      $('chat-note').textContent = navigator.onLine
+        ? 'Chat problem – check Sync settings' : 'Offline – messages will send when you are back online';
+    }
+  }
+  chatBusy = false;
+  if (chatAgain) chatSync();
+}
+
+document.querySelectorAll('#who button').forEach((b) => {
+  b.onclick = () => {
+    me = b.dataset.who;
+    try { localStorage.setItem('chat-me', me); } catch {}
+    renderChat();
+  };
+});
+
+$('send').onsubmit = (e) => {
+  e.preventDefault();
+  const text = $('msg').value.trim();
+  if (!text) return;
+  if (!me) { $('chat-note').textContent = 'Tap Irsyad or Ain above first, so I know who is writing.'; return; }
+  msgs = merge(msgs, [{ id: Date.now() + '-' + Math.random().toString(36).slice(2, 6), from: me, text, t: Date.now() }]);
+  write('myspace-chat', msgs);
+  $('msg').value = '';
+  renderChat();
+  $('msgs').scrollTop = $('msgs').scrollHeight;
+  chatSync();
+};
+
+/* ---------- Home ---------- */
+function renderHome() {
+  $('today').textContent = new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' });
+  if (data.start) {
+    const d = Math.floor((new Date().setHours(0, 0, 0, 0) - new Date(data.start + 'T00:00:00')) / 864e5);
+    $('days').textContent = Math.max(0, d).toLocaleString();
+  } else $('days').textContent = '–';
+  $('startdate').value = data.start || '';
+
+  const other = me === 'irsyad' ? 'Ain' : me === 'ain' ? 'Irsyad' : null;
+  $('chat-title').textContent = other ? 'Chat with ' + other : 'Chat';
+  const last = msgs[msgs.length - 1];
+  $('chat-prev').textContent = last ? last.text : 'Say hello!';
+
+  const rows = [];
+  for (const k of Object.keys(PEOPLE)) for (const t of data[k]) if (!t.done) rows.push({ k, t });
+  rows.sort((a, b) => b.t.id - a.t.id);
+  const box = $('home-tasks');
+  box.innerHTML = '';
+  if (!rows.length) {
+    const p = document.createElement('p');
+    p.className = 'muted';
+    p.textContent = 'All clear. Add tasks from the Irsyad or Ain tabs.';
+    box.append(p);
+  }
+  for (const { k, t } of rows.slice(0, 6)) {
+    const row = document.createElement('div');
+    row.className = 'trow';
+    const c = document.createElement('button');
+    c.className = 'circ'; c.type = 'button';
+    c.setAttribute('aria-label', 'Mark done: ' + t.text);
+    c.onclick = () => { t.done = true; changed(); renderHome(); };
+    const a = document.createElement('a');
+    a.className = 'tbody'; a.href = '#' + k;
+    const b = document.createElement('b'); b.textContent = t.text;
+    const sm = document.createElement('small'); sm.textContent = PEOPLE[k];
+    a.append(b, sm);
+    const av = document.createElement('i');
+    av.className = 'av'; av.textContent = PEOPLE[k][0];
+    row.append(c, a, av);
+    box.append(row);
+  }
+}
+
+$('startdate').onchange = (e) => { data.start = e.target.value; changed(); renderHome(); };
+
+$('q').oninput = () => {
+  const q = $('q').value.trim().toLowerCase();
+  $('dash').hidden = !!q;
+  $('results').hidden = !q;
+  const box = $('results');
+  box.innerHTML = '';
+  if (!q) return;
+  const hits = [];
+  for (const k of Object.keys(PEOPLE)) for (const t of data[k]) {
+    if (t.text.toLowerCase().includes(q)) hits.push({ href: '#' + k, title: t.text, sub: PEOPLE[k] + "'s task" + (t.done ? ' (done)' : '') });
+  }
+  for (const m of msgs) {
+    if (m.text.toLowerCase().includes(q)) hits.push({ href: '#chat', title: m.text, sub: 'Chat · ' + (PEOPLE[m.from] || m.from) });
+  }
+  if (!hits.length) {
+    const p = document.createElement('p');
+    p.className = 'muted'; p.textContent = 'No matches.';
+    box.append(p);
+  }
+  for (const h of hits.slice(0, 30)) {
+    const a = document.createElement('a');
+    a.className = 'trow'; a.href = h.href;
+    const wrap = document.createElement('span');
+    wrap.className = 'tbody';
+    const b = document.createElement('b'); b.textContent = h.title;
+    const sm = document.createElement('small'); sm.textContent = h.sub;
+    wrap.append(b, sm);
+    a.append(wrap);
+    box.append(a);
+  }
 };
 
 /* ---------- Calculator ---------- */
