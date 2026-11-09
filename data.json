@@ -18,6 +18,15 @@
    "kind": "event",
    "who": "irsyad",
    "done": false
+  },
+  {
+   "id": 1794213542557,
+   "date": "2026-11-14",
+   "time": "20:00",
+   "title": "Locum Madeena",
+   "kind": "event",
+   "who": "ain",
+   "done": false
   }
  ],
  "restock": [
