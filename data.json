@@ -66,6 +66,34 @@
   }
  ],
  "notes": [],
- "recipes": [],
+ "recipes": [
+  {
+   "id": 1794229454273,
+   "title": "Nasi goreng kampung",
+   "ingredients": [
+    "Nasi sejuk",
+    "Bawang",
+    "Cili",
+    "Bawang putih",
+    "Kangkung",
+    "Hilal",
+    "Garam",
+    "Sos tiram",
+    "Kicap sotong",
+    "Bilis goreng"
+   ],
+   "steps": [
+    "Tumis belacan tanpa minyak/ sedikit minyak",
+    "Tumbuk/mesin bawang, bilis goreng, bawang putih dan cili",
+    "Tumis bahan tumbuk/mesin",
+    "Tambah nasi",
+    "Tambah kangkung",
+    "Tambah hilal, garam, sos tiram, kicap sotong secukup rasa",
+    "Tabur bilis goreng"
+   ],
+   "by": "irsyad",
+   "t": 1794229454273
+  }
+ ],
  "start": "2024-11-30"
 }
