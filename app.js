@@ -6,16 +6,18 @@ const KEYS = Object.keys(PEOPLE);
 const read = (k) => { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } };
 const write = (k, v) => { try { localStorage.setItem(k, typeof v === 'string' ? v : JSON.stringify(v)); } catch {} };
 const lsGet = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
-const clean = (d) => ({
-  irsyad: Array.isArray(d && d.irsyad) ? d.irsyad : [],
-  ain: Array.isArray(d && d.ain) ? d.ain : [],
-  events: Array.isArray(d && d.events) ? d.events : [],
-  restock: Array.isArray(d && d.restock) ? d.restock : [],
-  start: typeof (d && d.start) === 'string' ? d.start : '',
-});
+const clean = (d) => {
+  const arr = (k) => (Array.isArray(d && d[k]) ? d[k] : []);
+  return {
+    irsyad: arr('irsyad'), ain: arr('ain'), events: arr('events'), restock: arr('restock'),
+    memories: arr('memories'), notes: arr('notes'), recipes: arr('recipes'),
+    start: typeof (d && d.start) === 'string' ? d.start : '',
+  };
+};
 // Also picks up lists saved by older versions of the app.
 let data = clean(read('myspace-data') || { irsyad: read('tasks-irsyad'), ain: read('tasks-ain') });
 const isDirty = () => localStorage.getItem('myspace-dirty') === '1';
+const hasData = () => Object.values(data).some((v) => Array.isArray(v) && v.length);
 
 /* ---------- Small helpers ---------- */
 const ymd = (d) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
@@ -25,6 +27,16 @@ const shortDay = (s) => toDate(s).toLocaleDateString(undefined, { weekday: 'shor
 const fmtTime = (t) => (t ? new Date('1970-01-01T' + t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '');
 const byWhen = (a, b) => a.date.localeCompare(b.date) || (a.time || '99:99').localeCompare(b.time || '99:99');
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; };
+const lines = (s) => s.split('\n').map((x) => x.trim()).filter(Boolean);
+const HEART = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-7-4.6-9.3-9A5.3 5.3 0 0 1 12 6.6 5.3 5.3 0 0 1 21.3 12C19 16.4 12 21 12 21z"/></svg>';
+
+function chipGroup(root, attr, value, onChange) {      // a row of buttons where one is chosen
+  const btns = [...root.querySelectorAll('button')];
+  const paint = (v) => btns.forEach((b) => b.classList.toggle('on', b.dataset[attr] === v));
+  paint(value);
+  btns.forEach((b) => { b.onclick = () => { value = b.dataset[attr]; paint(value); if (onChange) onChange(value); }; });
+  return () => value;
+}
 
 let taskFilter = 'all';
 let taskFor = lsGet('task-for') || 'irsyad';
@@ -32,11 +44,13 @@ let calFilter = 'all';
 let calFor = lsGet('cal-for') || 'both';
 let restockFilter = 'all';
 let restockFor = lsGet('restock-for') || 'wet';
+let moreTab = lsGet('more-tab') || 'memories';
+let selDay = ymd(new Date());
+let calMonth = new Date(); calMonth.setDate(1);
+let currentView = 'home';
 const WHO = { both: 'Irsyad & Ain', irsyad: 'Irsyad', ain: 'Ain' };
 const evWho = (e) => (e.who === 'irsyad' || e.who === 'ain' ? e.who : 'both');   // older events count as both
 const visibleEvents = () => data.events.filter((e) => calFilter === 'all' || evWho(e) === 'both' || evWho(e) === calFilter);
-let selDay = ymd(new Date());
-let calMonth = new Date(); calMonth.setDate(1);
 function goDay(date) { selDay = date; const d = toDate(date); calMonth = new Date(d.getFullYear(), d.getMonth(), 1); }
 
 function changed() {                       // call after any edit
@@ -46,19 +60,40 @@ function changed() {                       // call after any edit
 }
 
 /* ---------- Screens ---------- */
-const VIEWS = ['home', 'cal', 'tasks', 'restock', 'chat', 'settings', 'wallpaper'];
-function route() {
-  let page = location.hash.slice(1);
-  if (page === 'irsyad' || page === 'ain') { taskFilter = page; page = 'tasks'; }   // links from the older version
-  if (!VIEWS.includes(page || 'home')) page = '';
-  const view = page || 'home';
-  VIEWS.forEach((v) => { $(v).hidden = v !== view; });
-  document.querySelectorAll('#tabs a').forEach((a) => a.classList.toggle('on', a.dataset.p === page));
-  clearInterval(chatTimer);
-  if (view === 'home') { renderHome(); chatSync(); }
-  if (view === 'cal') renderCal();
+const VIEWS = ['home', 'tasks', 'restock', 'cal', 'more', 'chat', 'settings', 'wallpaper'];
+function render(view) {                    // draw one screen without scrolling
+  if (view === 'home') renderHome();
   if (view === 'tasks') renderTasks();
   if (view === 'restock') renderRestock();
+  if (view === 'cal') renderCal();
+  if (view === 'more') renderMore();
+}
+const refresh = () => render(currentView);
+
+function setFab(view) {
+  let f = null;
+  if (view === 'cal') f = ['New event', () => openEventSheet()];
+  if (view === 'more') {
+    f = moreTab === 'memories' ? ['New memory', () => openMemorySheet()]
+      : moreTab === 'notes' ? ['New note', () => openNoteSheet()] : ['New recipe', () => openRecipeSheet()];
+  }
+  $('fabwrap').hidden = !f;
+  if (f) { $('fab').textContent = '+ ' + f[0]; $('fab').onclick = f[1]; }
+}
+
+function route() {
+  let page = location.hash.slice(1);
+  if (page === 'irsyad' || page === 'ain') { taskFilter = page; page = 'tasks'; }   // links from older versions
+  if (['memories', 'notes', 'recipes'].includes(page)) { moreTab = page; page = 'more'; }
+  if (!VIEWS.includes(page || 'home')) page = '';
+  const view = page || 'home';
+  currentView = view;
+  VIEWS.forEach((v) => { $(v).hidden = v !== view; });
+  const tab = ['chat', 'settings', 'wallpaper'].includes(view) ? '' : page;      // those belong to Home
+  document.querySelectorAll('#tabs a').forEach((a) => a.classList.toggle('on', a.dataset.p === tab));
+  clearInterval(chatTimer);
+  render(view);
+  if (view === 'home') chatSync();
   if (view === 'chat') openChat();
   if (view === 'settings') {
     const c = read('gh-config');
@@ -68,10 +103,33 @@ function route() {
     $('cfg-msg').textContent = c ? 'Connected. Enter a new token only if you want to change it.' : '';
     $('token').required = !c;
   }
+  setFab(view);
   if (view !== 'home' && $('q').value) { $('q').value = ''; $('q').oninput(); }
   window.scrollTo(0, 0);
 }
 window.addEventListener('hashchange', route);
+
+/* ---------- Sheets (pop-up panels) ---------- */
+let closeSheet = () => {};
+function openSheet(title, build) {
+  $('sheet-title').textContent = title;
+  $('sheet-body').innerHTML = '';
+  $('sheet').hidden = false;
+  document.body.style.overflow = 'hidden';
+  closeSheet = () => { $('sheet').hidden = true; document.body.style.overflow = ''; $('sheet-body').innerHTML = ''; };
+  build($('sheet-body'), closeSheet);
+}
+$('sheet-x').onclick = () => closeSheet();
+$('sheet-bg').onclick = () => closeSheet();
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('sheet').hidden) closeSheet(); });
+
+function withMe(cb) {                      // some actions need to know who is using this device
+  if (me) return cb();
+  openSheet('Who are you?', (body, close) => {
+    body.innerHTML = '<p class="lede">So the app knows who you are on this device.</p><div class="actions"><button type="button" class="primary" data-w="irsyad">I am Irsyad</button><button type="button" class="primary" data-w="ain">I am Ain</button></div>';
+    body.querySelectorAll('button').forEach((b) => { b.onclick = () => { me = b.dataset.w; write('chat-me', me); close(); cb(); }; });
+  });
+}
 
 /* ---------- Tasks (Irsyad and Ain in one list) ---------- */
 function renderTasks() {
@@ -79,24 +137,23 @@ function renderTasks() {
   document.querySelectorAll('#tfor button').forEach((b) => b.classList.toggle('on', b.dataset.k === taskFor));
   const rows = [];
   for (const k of KEYS) for (const t of data[k]) rows.push({ k, t });
-  rows.sort((a, b) => (a.t.done - b.t.done) || (b.t.id - a.t.id));      // open tasks first, newest first
+  rows.sort((a, b) => (+!!a.t.done - +!!b.t.done) || (b.t.id - a.t.id));
   const shown = taskFilter === 'all' ? rows : rows.filter((r) => r.k === taskFilter);
   const list = $('list');
   list.innerHTML = '';
   for (const { k, t } of shown) {
     const li = el('li', t.done ? 'done' : '');
     const box = el('input');
-    box.type = 'checkbox'; box.checked = t.done;
+    box.type = 'checkbox'; box.checked = !!t.done;
     box.setAttribute('aria-label', 'Mark done: ' + t.text);
     box.onchange = () => { t.done = box.checked; changed(); renderTasks(); };
-    const label = el('span', '', t.text);
     const who = el('i', 'av', PEOPLE[k][0]);
     who.title = PEOPLE[k];
     const del = el('button', 'del', '×');
     del.type = 'button';
     del.setAttribute('aria-label', 'Delete: ' + t.text);
     del.onclick = () => { data[k] = data[k].filter((x) => x.id !== t.id); changed(); renderTasks(); };
-    li.append(box, label, who, del);
+    li.append(box, el('span', '', t.text), who, del);
     list.append(li);
   }
   const open = shown.filter((r) => !r.t.done).length;
@@ -119,73 +176,6 @@ $('add').onsubmit = (e) => {
   changed(); renderTasks();
 };
 $('clear').onclick = () => { for (const k of KEYS) data[k] = data[k].filter((t) => !t.done); changed(); renderTasks(); };
-
-/* ---------- Calendar (events and reminders by date) ---------- */
-function renderCal() {
-  document.querySelectorAll('#cfilter button').forEach((b) => b.classList.toggle('on', b.dataset.f === calFilter));
-  document.querySelectorAll('#cfor button').forEach((b) => b.classList.toggle('on', b.dataset.w === calFor));
-  const y = calMonth.getFullYear(), m = calMonth.getMonth();
-  $('cal-title').textContent = calMonth.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
-  const blanks = new Date(y, m, 1).getDay(), days = new Date(y, m + 1, 0).getDate();
-  const counts = {};
-  for (const e of visibleEvents()) counts[e.date] = (counts[e.date] || 0) + 1;
-  const todayKey = ymd(new Date());
-  const grid = $('cal-grid');
-  grid.innerHTML = '';
-  for (let i = 0; i < blanks; i++) grid.append(el('span'));
-  for (let d = 1; d <= days; d++) {
-    const key = ymd(new Date(y, m, d));
-    const b = el('button', 'day' + (key === todayKey ? ' today' : '') + (key === selDay ? ' sel' : ''), String(d));
-    b.type = 'button';
-    b.setAttribute('aria-label', longDay(key) + (counts[key] ? ', ' + counts[key] + ' planned' : ''));
-    if (counts[key]) b.append(el('i', 'dot'));
-    b.onclick = () => { selDay = key; renderCal(); };
-    grid.append(b);
-  }
-  renderDay();
-}
-function renderDay() {
-  $('day-title').textContent = longDay(selDay);
-  const items = visibleEvents().filter((e) => e.date === selDay).sort(byWhen);
-  const ul = $('day-list');
-  ul.innerHTML = '';
-  for (const e of items) {
-    const li = el('li', e.done ? 'done' : '');
-    let lead;
-    if (e.kind === 'reminder') {
-      lead = el('input');
-      lead.type = 'checkbox'; lead.checked = !!e.done;
-      lead.setAttribute('aria-label', 'Mark done: ' + e.title);
-      lead.onchange = () => { e.done = lead.checked; changed(); renderDay(); };
-    } else lead = el('i', 'evdot');
-    const body = el('span', '', e.title);
-    body.append(el('small', '', [fmtTime(e.time), e.kind === 'reminder' ? 'Reminder' : 'Event', WHO[evWho(e)]].filter(Boolean).join(' · ')));
-    const del = el('button', 'del', '×');
-    del.type = 'button';
-    del.setAttribute('aria-label', 'Delete: ' + e.title);
-    del.onclick = () => { data.events = data.events.filter((x) => x.id !== e.id); changed(); renderCal(); };
-    li.append(lead, body, ...(evWho(e) === 'both' ? [] : [el('i', 'av', PEOPLE[evWho(e)][0])]), del);
-    ul.append(li);
-  }
-  $('day-empty').hidden = items.length > 0;
-}
-$('prev').onclick = () => { calMonth = new Date(calMonth.getFullYear(), calMonth.getMonth() - 1, 1); renderCal(); };
-$('next').onclick = () => { calMonth = new Date(calMonth.getFullYear(), calMonth.getMonth() + 1, 1); renderCal(); };
-$('todaybtn').onclick = () => { goDay(ymd(new Date())); renderCal(); };
-document.querySelectorAll('#cfilter button').forEach((b) => {
-  b.onclick = () => { calFilter = b.dataset.f; if (calFilter !== 'all') { calFor = calFilter; write('cal-for', calFor); } renderCal(); };
-});
-document.querySelectorAll('#cfor button').forEach((b) => {
-  b.onclick = () => { calFor = b.dataset.w; write('cal-for', calFor); if (calFilter !== 'all' && calFor !== 'both') calFilter = calFor; renderCal(); };
-});
-$('evform').onsubmit = (e) => {
-  e.preventDefault();
-  const title = $('evtitle').value.trim();
-  if (!title) return;
-  data.events.push({ id: Date.now(), date: selDay, time: $('evtime').value, title, kind: $('evkind').value, who: calFor, done: false });
-  $('evtitle').value = ''; $('evtime').value = '';
-  changed(); renderCal();
-};
 
 /* ---------- Restock (kitchen wet/dry, personal for Irsyad or Ain) ---------- */
 const CATS = { wet: 'Kitchen · Wet', dry: 'Kitchen · Dry', irsyad: "Irsyad's personal items", ain: "Ain's personal items" };
@@ -236,6 +226,430 @@ $('radd').onsubmit = (e) => {
 };
 $('rclear').onclick = () => { data.restock = data.restock.filter((i) => !i.done); changed(); renderRestock(); };
 
+/* ---------- Calendar (Monday first, like the picture) ---------- */
+function renderCal() {
+  document.querySelectorAll('#cfilter button').forEach((b) => b.classList.toggle('on', b.dataset.f === calFilter));
+  const y = calMonth.getFullYear(), m = calMonth.getMonth();
+  $('cal-title').textContent = calMonth.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+  const blanks = (new Date(y, m, 1).getDay() + 6) % 7, days = new Date(y, m + 1, 0).getDate();
+  const byDay = {};
+  for (const e of visibleEvents()) (byDay[e.date] = byDay[e.date] || []).push(e);
+  const todayKey = ymd(new Date());
+  const grid = $('cal-grid');
+  grid.innerHTML = '';
+  for (let i = 0; i < blanks; i++) grid.append(el('span'));
+  for (let d = 1; d <= days; d++) {
+    const key = ymd(new Date(y, m, d));
+    const b = el('button', 'day' + (key === todayKey ? ' today' : '') + (key === selDay ? ' sel' : ''));
+    b.type = 'button';
+    b.append(el('span', 'num', String(d)));
+    const list = byDay[key] || [];
+    if (list.length) {
+      const dots = el('div', 'dots');
+      for (const w of ['irsyad', 'ain', 'both']) {
+        if (list.some((e) => evWho(e) === w)) dots.append(el('i', w === 'irsyad' ? 'd-i' : w === 'ain' ? 'd-a' : 'd-b'));
+      }
+      b.append(dots);
+    }
+    b.setAttribute('aria-label', longDay(key) + (list.length ? ', ' + list.length + ' planned' : ''));
+    b.onclick = () => { selDay = key; renderCal(); };
+    grid.append(b);
+  }
+  renderDay();
+  renderUpcoming(todayKey);
+}
+function evSmall(e, extra) {
+  return [extra, fmtTime(e.time), e.kind === 'reminder' ? 'Reminder' : 'Event', WHO[evWho(e)]].filter(Boolean).join(' · ');
+}
+function renderDay() {
+  $('day-title').textContent = longDay(selDay);
+  const items = visibleEvents().filter((e) => e.date === selDay).sort(byWhen);
+  const ul = $('day-list');
+  ul.innerHTML = '';
+  for (const e of items) {
+    const li = el('li', e.done ? 'done' : '');
+    let lead;
+    if (e.kind === 'reminder') {
+      lead = el('input');
+      lead.type = 'checkbox'; lead.checked = !!e.done;
+      lead.setAttribute('aria-label', 'Mark done: ' + e.title);
+      lead.onchange = () => { e.done = lead.checked; changed(); renderCal(); };
+    } else lead = el('i', 'evdot');
+    const body = el('span', '', e.title);
+    body.style.cursor = 'pointer';
+    body.append(el('small', '', evSmall(e)));
+    body.onclick = () => openEventSheet(e);
+    li.append(lead, body);
+    if (evWho(e) !== 'both') li.append(el('i', 'av', PEOPLE[evWho(e)][0]));
+    ul.append(li);
+  }
+  $('day-empty').hidden = items.length > 0;
+}
+function renderUpcoming(todayKey) {
+  const up = visibleEvents().filter((e) => e.date >= todayKey).sort(byWhen).slice(0, 8);
+  const box = $('upcoming');
+  box.innerHTML = '';
+  for (const e of up) {
+    const row = el('div', 'trow');
+    row.style.cursor = 'pointer';
+    const chip = el('div', 'datechip');
+    chip.append(el('small', '', toDate(e.date).toLocaleDateString(undefined, { month: 'short' })), el('b', '', String(toDate(e.date).getDate())));
+    const body = el('div', 'tbody');
+    body.append(el('b', '', e.title), el('small', '', evSmall(e)));
+    row.append(chip, body);
+    row.onclick = () => { goDay(e.date); renderCal(); window.scrollTo({ top: 0, behavior: 'smooth' }); };
+    box.append(row);
+  }
+  $('up-empty').hidden = up.length > 0;
+}
+const shiftMonth = (n) => { calMonth = new Date(calMonth.getFullYear(), calMonth.getMonth() + n, 1); renderCal(); };
+$('prev').onclick = () => shiftMonth(-1);
+$('next').onclick = () => shiftMonth(1);
+let swipeX = null;                          // swipe the calendar left or right to change month
+$('calcard').addEventListener('touchstart', (e) => { swipeX = e.touches[0].clientX; }, { passive: true });
+$('calcard').addEventListener('touchend', (e) => {
+  if (swipeX === null) return;
+  const dx = e.changedTouches[0].clientX - swipeX;
+  swipeX = null;
+  if (Math.abs(dx) > 50) shiftMonth(dx < 0 ? 1 : -1);
+});
+document.querySelectorAll('#cfilter button').forEach((b) => {
+  b.onclick = () => { calFilter = b.dataset.f; if (calFilter !== 'all') { calFor = calFilter; write('cal-for', calFor); } renderCal(); };
+});
+
+function openEventSheet(ev) {
+  const isNew = !ev;
+  const e = ev || { id: Date.now(), date: selDay, time: '', title: '', kind: 'event', who: calFor, done: false };
+  openSheet(isNew ? 'New event' : 'Edit event', (body, close) => {
+    body.innerHTML = `
+      <label class="fld">Title<input id="s-title" type="text" placeholder="e.g. Dinner, bill due"></label>
+      <div class="row2">
+        <label class="fld">Date<input id="s-date" type="date"></label>
+        <label class="fld">Time (optional)<input id="s-time" type="time"></label>
+      </div>
+      <div class="fld">Type<div class="chips" id="s-kind"><button type="button" data-v="event">Event</button><button type="button" data-v="reminder">Reminder</button></div></div>
+      <div class="fld">For<div class="chips" id="s-who"><button type="button" data-v="both">Both</button><button type="button" data-v="irsyad">Irsyad</button><button type="button" data-v="ain">Ain</button></div></div>
+      <p id="s-err" class="err"></p>
+      <div class="actions"><button type="button" id="s-save" class="primary">Save</button>${isNew ? '' : '<button type="button" id="s-del" class="danger">Delete</button>'}</div>`;
+    $('s-title').value = e.title; $('s-date').value = e.date; $('s-time').value = e.time || '';
+    const kind = chipGroup($('s-kind'), 'v', e.kind || 'event');
+    const who = chipGroup($('s-who'), 'v', evWho(e));
+    $('s-save').onclick = () => {
+      const title = $('s-title').value.trim(), date = $('s-date').value;
+      if (!title || !date) { $('s-err').textContent = 'Please add a title and a date.'; return; }
+      Object.assign(e, { title, date, time: $('s-time').value, kind: kind(), who: who() });
+      if (isNew) data.events.push(e);
+      calFor = e.who; write('cal-for', calFor);
+      changed(); close(); goDay(date); refresh();
+    };
+    if (!isNew) $('s-del').onclick = () => {
+      if (!confirm('Delete this event?')) return;
+      data.events = data.events.filter((x) => x.id !== e.id);
+      changed(); close(); refresh();
+    };
+  });
+}
+
+/* ---------- Photos (kept on the device, shared through GitHub) ---------- */
+const memBlobs = new Map();
+const idb = () => new Promise((res, rej) => {
+  const r = indexedDB.open('myspace', 1);
+  r.onupgradeneeded = () => r.result.createObjectStore('photos');
+  r.onsuccess = () => res(r.result);
+  r.onerror = () => rej(r.error);
+});
+async function idbGet(k) {
+  if (memBlobs.has(k)) return memBlobs.get(k);
+  try {
+    const db = await idb();
+    return await new Promise((res) => { const q = db.transaction('photos').objectStore('photos').get(k); q.onsuccess = () => res(q.result || null); q.onerror = () => res(null); });
+  } catch { return null; }
+}
+async function idbPut(k, v) {
+  memBlobs.set(k, v);
+  try {
+    const db = await idb();
+    await new Promise((res) => { const t = db.transaction('photos', 'readwrite'); t.objectStore('photos').put(v, k); t.oncomplete = res; t.onerror = res; });
+  } catch {}
+}
+function shrink(file, max = 1200) {         // make a big photo small enough to save and share
+  return new Promise((res, rej) => {
+    const url = URL.createObjectURL(file), im = new Image();
+    im.onload = () => {
+      const sc = Math.min(1, max / Math.max(im.width, im.height));
+      const cv = document.createElement('canvas');
+      cv.width = Math.round(im.width * sc); cv.height = Math.round(im.height * sc);
+      cv.getContext('2d').drawImage(im, 0, 0, cv.width, cv.height);
+      URL.revokeObjectURL(url);
+      cv.toBlob((b) => (b ? res(b) : rej(new Error('blob'))), 'image/jpeg', 0.82);
+    };
+    im.onerror = () => { URL.revokeObjectURL(url); rej(new Error('image')); };
+    im.src = url;
+  });
+}
+const blobToDataURL = (b) => new Promise((res) => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.readAsDataURL(b); });
+const urlCache = new Map();
+async function photoURL(path) {
+  if (urlCache.has(path)) return urlCache.get(path);
+  let blob = await idbGet(path);
+  if (!blob) {
+    const c = read('gh-config');
+    if (!c) return null;
+    try {
+      const r = await fetch(API(c, path), { headers: { ...hdr(c), Accept: 'application/vnd.github.raw+json' }, cache: 'no-store' });
+      if (!r.ok) return null;
+      blob = await r.blob();
+      await idbPut(path, blob);
+    } catch { return null; }
+  }
+  const u = URL.createObjectURL(blob);
+  urlCache.set(path, u);
+  return u;
+}
+async function uploadPhoto(path) {
+  const c = read('gh-config');
+  if (!c) return false;
+  const blob = await idbGet(path);
+  if (!blob) return true;
+  const content = (await blobToDataURL(blob)).split(',')[1];
+  const r = await fetch(API(c, path), { method: 'PUT', headers: { ...hdr(c), 'Content-Type': 'application/json' }, body: JSON.stringify({ message: 'Add photo', content }) });
+  return r.ok || r.status === 422;           // 422 means it is already there
+}
+let flushing = false;
+async function flushUploads() {
+  const list = read('pending-photos') || [];
+  if (flushing || !list.length || !read('gh-config') || !navigator.onLine) return;
+  flushing = true;
+  const left = [];
+  for (const p of list) { let ok = false; try { ok = await uploadPhoto(p); } catch {} if (!ok) left.push(p); }
+  write('pending-photos', left);
+  flushing = false;
+}
+async function deletePhoto(path) {          // best effort: remove the file from GitHub too
+  const c = read('gh-config');
+  if (!c || !path) return;
+  try {
+    const g = await fetch(API(c, path), { headers: hdr(c), cache: 'no-store' });
+    if (!g.ok) return;
+    const j = await g.json();
+    await fetch(API(c, path), { method: 'DELETE', headers: { ...hdr(c), 'Content-Type': 'application/json' }, body: JSON.stringify({ message: 'Delete photo', sha: j.sha }) });
+  } catch {}
+}
+function showPhoto(holder, path, alt) {      // fill a box with the photo when it is ready
+  photoURL(path).then((u) => { if (u && holder.isConnected) { const img = el('img'); img.src = u; img.alt = alt; holder.replaceChildren(img); } });
+}
+
+/* ---------- More: Memories, Notes, Recipes ---------- */
+function renderMore() {
+  document.querySelectorAll('#moretabs button').forEach((b) => b.classList.toggle('on', b.dataset.t === moreTab));
+  for (const t of ['memories', 'notes', 'recipes']) $('m-' + t).hidden = t !== moreTab;
+  if (moreTab === 'memories') renderMemories();
+  else if (moreTab === 'notes') renderNotes();
+  else renderRecipes();
+}
+document.querySelectorAll('#moretabs button').forEach((b) => {
+  b.onclick = () => { moreTab = b.dataset.t; write('more-tab', moreTab); renderMore(); setFab('more'); };
+});
+function openMore(tab) { moreTab = tab; write('more-tab', tab); }
+
+/* Memories (photos with hearts) */
+function paintHeart(btn, m) {
+  const liked = !!me && m.hearts.includes(me);
+  btn.classList.toggle('liked', liked);
+  btn.innerHTML = HEART + (m.hearts.length ? '<span>' + m.hearts.length + '</span>' : '');
+  btn.setAttribute('aria-label', liked ? 'Remove heart' : 'Add heart');
+}
+function toggleHeart(m, btn) {
+  withMe(() => {
+    m.hearts = m.hearts.includes(me) ? m.hearts.filter((x) => x !== me) : [...m.hearts, me];
+    changed(); paintHeart(btn, m);
+  });
+}
+function renderMemories() {
+  const box = $('mem-grid');
+  box.innerHTML = '';
+  const list = [...data.memories].sort((a, b) => (b.date || '').localeCompare(a.date || '') || b.id - a.id);
+  $('mem-empty').hidden = list.length > 0;
+  for (const m of list) {
+    m.hearts = Array.isArray(m.hearts) ? m.hearts : [];
+    const card = el('div', 'memcard glass');
+    const ph = el('div', 'memph', m.photo ? '' : 'No photo');
+    if (m.photo) showPhoto(ph, m.photo, m.title);
+    const heart = el('button', 'heart');
+    heart.type = 'button';
+    paintHeart(heart, m);
+    heart.onclick = (e) => { e.stopPropagation(); toggleHeart(m, heart); };
+    card.append(ph, el('h4', '', m.title), el('small', '', shortDay(m.date)), heart);
+    card.onclick = () => openMemoryDetail(m);
+    box.append(card);
+  }
+}
+function openMemorySheet() {
+  openSheet('New memory', (body, close) => {
+    let blob = null;
+    body.innerHTML = `
+      <div class="photopick" id="m-pick" role="button" tabindex="0"><span id="m-hint">Tap to add a photo</span></div>
+      <input id="m-file" type="file" accept="image/*" hidden>
+      <label class="fld">Title<input id="m-title" type="text" placeholder="What happened?"></label>
+      <label class="fld">Date<input id="m-date" type="date"></label>
+      <p id="m-err" class="err"></p>
+      <div class="actions"><button type="button" id="m-save" class="primary">Save memory</button></div>`;
+    $('m-date').value = ymd(new Date());
+    const pick = $('m-pick');
+    pick.onclick = () => $('m-file').click();
+    pick.onkeydown = (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); $('m-file').click(); } };
+    $('m-file').onchange = async (ev) => {
+      const f = ev.target.files[0];
+      if (!f) return;
+      $('m-hint').textContent = 'Preparing photo…';
+      try {
+        blob = await shrink(f);
+        pick.style.backgroundImage = 'url("' + URL.createObjectURL(blob) + '")';
+        pick.classList.add('has');
+        $('m-hint').textContent = 'Change photo';
+      } catch { blob = null; $('m-hint').textContent = "Couldn't read that image"; }
+    };
+    $('m-save').onclick = async () => {
+      const title = $('m-title').value.trim();
+      if (!title) { $('m-err').textContent = 'Please add a title.'; return; }
+      const id = Date.now();
+      let photo = '';
+      if (blob) {
+        photo = 'photos/' + id + '.jpg';
+        await idbPut(photo, blob);
+        write('pending-photos', [...(read('pending-photos') || []), photo]);
+      }
+      data.memories.unshift({ id, title, date: $('m-date').value || ymd(new Date()), photo, hearts: [], by: me || '' });
+      changed(); close(); refresh(); flushUploads();
+    };
+  });
+}
+function openMemoryDetail(m) {
+  openSheet(m.title, (body, close) => {
+    body.innerHTML = '<div class="bigph" id="d-ph"></div><p class="lede" id="d-meta"></p><div class="actions"><button type="button" class="heart big" id="d-heart"></button><button type="button" class="danger" id="d-del">Delete</button></div>';
+    if (m.photo) showPhoto($('d-ph'), m.photo, m.title); else $('d-ph').hidden = true;
+    $('d-meta').textContent = longDay(m.date) + (m.by && PEOPLE[m.by] ? ' · added by ' + PEOPLE[m.by] : '');
+    paintHeart($('d-heart'), m);
+    $('d-heart').onclick = () => toggleHeart(m, $('d-heart'));
+    $('d-del').onclick = () => {
+      if (!confirm('Delete this memory?')) return;
+      data.memories = data.memories.filter((x) => x.id !== m.id);
+      changed(); close(); refresh(); deletePhoto(m.photo);
+    };
+  });
+}
+
+/* Notes */
+function renderNotes() {
+  const box = $('note-grid');
+  box.innerHTML = '';
+  const list = [...data.notes].sort((a, b) => (b.t || 0) - (a.t || 0));
+  $('note-empty').hidden = list.length > 0;
+  for (const n of list) {
+    const card = el('div', 'notecard glass');
+    card.append(el('h4', '', n.title || (n.text || '').split('\n')[0] || 'Note'));
+    if (n.title && n.text) card.append(el('p', '', n.text));
+    card.append(el('small', '', [new Date(n.t || n.id).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }), PEOPLE[n.by]].filter(Boolean).join(' · ')));
+    card.onclick = () => openNoteSheet(n);
+    box.append(card);
+  }
+}
+function openNoteSheet(n) {
+  const isNew = !n;
+  const note = n || { id: Date.now(), title: '', text: '', by: me || '', t: Date.now() };
+  openSheet(isNew ? 'New note' : 'Note', (body, close) => {
+    body.innerHTML = `
+      <label class="fld">Title (optional)<input id="n-title" type="text"></label>
+      <label class="fld">Note<textarea id="n-text" rows="8"></textarea></label>
+      <p id="n-err" class="err"></p>
+      <div class="actions"><button type="button" id="n-save" class="primary">Save</button>${isNew ? '' : '<button type="button" id="n-del" class="danger">Delete</button>'}</div>`;
+    $('n-title').value = note.title; $('n-text').value = note.text;
+    $('n-save').onclick = () => {
+      const title = $('n-title').value.trim(), text = $('n-text').value.trim();
+      if (!title && !text) { $('n-err').textContent = 'Write something first.'; return; }
+      Object.assign(note, { title, text, t: Date.now() });
+      if (isNew) data.notes.unshift(note);
+      changed(); close(); refresh();
+    };
+    if (!isNew) $('n-del').onclick = () => {
+      if (!confirm('Delete this note?')) return;
+      data.notes = data.notes.filter((x) => x.id !== note.id);
+      changed(); close(); refresh();
+    };
+  });
+}
+
+/* Recipes */
+function renderRecipes() {
+  const q = $('rq').value.trim().toLowerCase();
+  const list = data.recipes
+    .filter((r) => !q || r.title.toLowerCase().includes(q) || (r.ingredients || []).some((i) => i.toLowerCase().includes(q)))
+    .sort((a, b) => a.title.localeCompare(b.title));
+  const box = $('rec-grid');
+  box.innerHTML = '';
+  $('rec-empty').hidden = list.length > 0;
+  $('rec-empty').textContent = q ? 'No recipes match your search.' : 'No recipes yet. Tap + New recipe to add one.';
+  for (const r of list) {
+    const card = el('div', 'reccard glass');
+    const ing = (r.ingredients || []).length, st = (r.steps || []).length;
+    card.append(el('h4', '', r.title), el('small', '', ing + (ing === 1 ? ' ingredient' : ' ingredients')), el('small', '', st + (st === 1 ? ' step' : ' steps')));
+    card.onclick = () => openRecipeDetail(r);
+    box.append(card);
+  }
+}
+$('rq').oninput = renderRecipes;
+function openRecipeDetail(r) {
+  openSheet(r.title, (body, close) => {
+    const info = el('div', 'card');
+    const kv = el('div', 'kv');
+    kv.append(el('span', '', 'Added by'), el('b', '', PEOPLE[r.by] || '—'));
+    info.append(kv);
+    const ing = el('div', 'card');
+    ing.append(el('p', 'cap', 'Ingredients · ' + (r.ingredients || []).length));
+    const ul = el('ul');
+    for (const i of r.ingredients || []) ul.append(el('li', '', i));
+    ing.append(ul);
+    const met = el('div', 'card');
+    met.append(el('p', 'cap', 'Method · ' + (r.steps || []).length + ((r.steps || []).length === 1 ? ' step' : ' steps')));
+    const ol = el('ol');
+    for (const s of r.steps || []) ol.append(el('li', '', s));
+    met.append(ol);
+    const act = el('div', 'actions');
+    const edit = el('button', 'primary', 'Edit'); edit.type = 'button';
+    const del = el('button', 'danger', 'Delete'); del.type = 'button';
+    edit.onclick = () => { close(); openRecipeSheet(r); };
+    del.onclick = () => {
+      if (!confirm('Delete this recipe?')) return;
+      data.recipes = data.recipes.filter((x) => x.id !== r.id);
+      changed(); close(); refresh();
+    };
+    act.append(edit, del);
+    body.append(info, ing, met, act);
+  });
+}
+function openRecipeSheet(r) {
+  const isNew = !r;
+  const rec = r || { id: Date.now(), title: '', ingredients: [], steps: [], by: me || 'irsyad', t: Date.now() };
+  openSheet(isNew ? 'New recipe' : 'Edit recipe', (body, close) => {
+    body.innerHTML = `
+      <label class="fld">Name<input id="r-title" type="text" placeholder="e.g. Mee cotcot"></label>
+      <label class="fld">Ingredients (one per line)<textarea id="r-ing" rows="6"></textarea></label>
+      <label class="fld">Method (one step per line)<textarea id="r-steps" rows="5"></textarea></label>
+      <div class="fld">Added by<div class="chips" id="r-by"><button type="button" data-v="irsyad">Irsyad</button><button type="button" data-v="ain">Ain</button></div></div>
+      <p id="r-err" class="err"></p>
+      <div class="actions"><button type="button" id="r-save" class="primary">Save recipe</button></div>`;
+    $('r-title').value = rec.title; $('r-ing').value = (rec.ingredients || []).join('\n'); $('r-steps').value = (rec.steps || []).join('\n');
+    const by = chipGroup($('r-by'), 'v', rec.by === 'ain' ? 'ain' : 'irsyad');
+    $('r-save').onclick = () => {
+      const title = $('r-title').value.trim();
+      if (!title) { $('r-err').textContent = 'Please add a name.'; return; }
+      Object.assign(rec, { title, ingredients: lines($('r-ing').value), steps: lines($('r-steps').value), by: by() });
+      if (isNew) data.recipes.push(rec);
+      changed(); close(); refresh();
+    };
+  });
+}
+
 /* ---------- Home ---------- */
 function fill(box, rows, emptyText) {
   box.innerHTML = '';
@@ -254,7 +668,7 @@ function evRow(e, extra) {                 // one event or reminder as a card
   const a = el('a', 'tbody');
   a.href = '#cal';
   a.onclick = () => goDay(e.date);
-  a.append(el('b', '', e.title), el('small', '', [extra, fmtTime(e.time), e.kind === 'reminder' ? 'Reminder' : 'Event', WHO[evWho(e)]].filter(Boolean).join(' · ')));
+  a.append(el('b', '', e.title), el('small', '', evSmall(e, extra)));
   row.append(lead, a);
   return row;
 }
@@ -305,24 +719,28 @@ $('q').oninput = () => {
   const box = $('results');
   box.innerHTML = '';
   if (!q) return;
+  const has = (s) => (s || '').toLowerCase().includes(q);
   const hits = [];
   for (const k of KEYS) for (const t of data[k]) {
-    if (t.text.toLowerCase().includes(q)) hits.push({ href: '#tasks', title: t.text, sub: PEOPLE[k] + "'s task" + (t.done ? ' (done)' : '') });
+    if (has(t.text)) hits.push({ href: '#tasks', title: t.text, sub: PEOPLE[k] + "'s task" + (t.done ? ' (done)' : '') });
   }
   for (const i of data.restock) {
-    if (i.text.toLowerCase().includes(q)) hits.push({ href: '#restock', title: i.text, sub: 'Restock · ' + CATS[i.cat] + (i.done ? ' (bought)' : '') });
+    if (has(i.text)) hits.push({ href: '#restock', title: i.text, sub: 'Restock · ' + CATS[i.cat] + (i.done ? ' (bought)' : '') });
   }
   for (const e of data.events) {
-    if (e.title.toLowerCase().includes(q)) hits.push({ href: '#cal', title: e.title, sub: (e.kind === 'reminder' ? 'Reminder' : 'Event') + ' · ' + shortDay(e.date), day: e.date });
+    if (has(e.title)) hits.push({ href: '#cal', title: e.title, sub: (e.kind === 'reminder' ? 'Reminder' : 'Event') + ' · ' + shortDay(e.date), go: () => goDay(e.date) });
   }
+  for (const m of data.memories) if (has(m.title)) hits.push({ href: '#more', title: m.title, sub: 'Memory · ' + shortDay(m.date), go: () => openMore('memories') });
+  for (const n of data.notes) if (has(n.title) || has(n.text)) hits.push({ href: '#more', title: n.title || n.text.split('\n')[0], sub: 'Note', go: () => openMore('notes') });
+  for (const r of data.recipes) if (has(r.title) || (r.ingredients || []).some(has)) hits.push({ href: '#more', title: r.title, sub: 'Recipe', go: () => openMore('recipes') });
   for (const m of msgs) {
-    if (m.text.toLowerCase().includes(q)) hits.push({ href: '#chat', title: m.text, sub: 'Chat · ' + (PEOPLE[m.from] || m.from) });
+    if (has(m.text)) hits.push({ href: '#chat', title: m.text, sub: 'Chat · ' + (PEOPLE[m.from] || m.from) });
   }
   if (!hits.length) box.append(el('p', 'muted', 'No matches.'));
   for (const h of hits.slice(0, 30)) {
     const a = el('a', 'trow');
     a.href = h.href;
-    if (h.day) a.onclick = () => goDay(h.day);
+    if (h.go) a.onclick = h.go;
     const wrap = el('span', 'tbody');
     wrap.append(el('b', '', h.title), el('small', '', h.sub));
     a.append(wrap);
@@ -351,7 +769,7 @@ async function put(c) {
   let ok = false;
   try {
     for (let i = 0; i < 2 && !ok; i++) {
-      const body = { message: 'Update tasks', content: enc(JSON.stringify(data, null, 1)) };
+      const body = { message: 'Update data', content: enc(JSON.stringify(data, null, 1)) };
       if (sha) body.sha = sha;
       const r = await fetch(API(c), {
         method: 'PUT', headers: { ...hdr(c), 'Content-Type': 'application/json' }, body: JSON.stringify(body),
@@ -380,13 +798,14 @@ async function sync() {
     if (r.ok) {
       const j = await r.json();
       sha = j.sha;
-      if (!isDirty()) { data = clean(JSON.parse(dec(j.content))); write('myspace-data', data); route(); }
+      if (!isDirty() && $('sheet').hidden) { data = clean(JSON.parse(dec(j.content))); write('myspace-data', data); refresh(); }
     } else if (r.status === 404) {
       sha = null;
-      if (data.irsyad.length || data.ain.length || data.events.length || data.restock.length) write('myspace-dirty', '1');
+      if (hasData()) write('myspace-dirty', '1');
     } else throw new Error(r.status);
     if (isDirty()) await put(c);
     status('Saved to GitHub ✓');
+    flushUploads();
   } catch (e) {
     failed = true;
     status(navigator.onLine ? 'Sync problem (' + e.message + ') – check Sync settings' : 'Offline – will save when online');
@@ -412,8 +831,8 @@ $('cfg').onsubmit = async (e) => {
     sha = null;
     $('token').value = '';
     msg.textContent = j.private
-      ? 'Connected ✓ Your lists will now save automatically.'
-      : 'Connected, but this repository is PUBLIC, so anyone can read your lists. Please make it private.';
+      ? 'Connected ✓ Your data will now save automatically.'
+      : 'Connected, but this repository is PUBLIC, so anyone can read your data and photos. Please make it private.';
     sync();
   } catch {
     msg.textContent = "Couldn't connect. Check the username, repository name and token.";
@@ -422,11 +841,11 @@ $('cfg').onsubmit = async (e) => {
 $('disconnect').onclick = () => {
   try { localStorage.removeItem('gh-config'); } catch {}
   sha = null;
-  $('cfg-msg').textContent = 'Disconnected. Lists now save on this device only.';
+  $('cfg-msg').textContent = 'Disconnected. Data now saves on this device only.';
   status('Saved on this device only');
 };
 
-/* ---------- Chat (messages.json in the same GitHub repo) ---------- */
+/* ---------- Chat (messages.json in the same GitHub repo; opened from Home) ---------- */
 let msgs = read('myspace-chat') || [];
 let me = lsGet('chat-me');
 let chatTimer = null, chatBusy = false, chatAgain = false;
@@ -522,11 +941,11 @@ $('send').onsubmit = (e) => {
   chatSync();
 };
 
-/* ---------- Wallpaper (saved per device) ---------- */
+/* ---------- Wallpaper and Liquid Glass (saved per device) ---------- */
 function applyWallpaper() {
   const img = lsGet('wp-custom');
-  let st = lsGet('wp-style') || 'cream';
-  if (st === 'photo' && !img) st = 'cream';
+  let st = lsGet('wp-style') || 'glow';
+  if (st === 'photo' && !img) st = 'glow';
   document.documentElement.dataset.wp = st;
   if (img) document.documentElement.style.setProperty('--wp-img', 'url("' + img + '")');
   else document.documentElement.style.removeProperty('--wp-img');
@@ -536,46 +955,44 @@ function applyWallpaper() {
   $('rmphoto').hidden = !img;
   document.querySelectorAll('.sw').forEach((b) => b.classList.toggle('on', b.dataset.s === st));
 }
+function applyGlass() {                     // 0 = clear glass, 100 = frosted
+  const v = Number(lsGet('glass') === null ? 60 : lsGet('glass'));
+  document.documentElement.style.setProperty('--ga', (0.25 + v * 0.0065).toFixed(2));
+  document.documentElement.style.setProperty('--gb', (8 + v * 0.2).toFixed(0) + 'px');
+  $('glass').value = v;
+}
+$('glass').oninput = () => { write('glass', $('glass').value); applyGlass(); };
 document.querySelectorAll('.sw').forEach((b) => {
   b.onclick = () => { write('wp-style', b.dataset.s); applyWallpaper(); };
 });
 $('pick').onclick = () => $('file').click();
 $('rmphoto').onclick = () => {
   try { localStorage.removeItem('wp-custom'); } catch {}
-  write('wp-style', 'cream');
+  write('wp-style', 'glow');
   $('wp-msg').textContent = 'Photo removed.';
   applyWallpaper();
 };
-$('file').onchange = (e) => {
+$('file').onchange = async (e) => {
   const f = e.target.files[0];
   if (!f) return;
   const msg = $('wp-msg');
   msg.textContent = 'Loading…';
-  const url = URL.createObjectURL(f);
-  const im = new Image();
-  im.onload = () => {
-    const sc = Math.min(1, 1600 / Math.max(im.width, im.height));   // shrink big photos
-    const cv = document.createElement('canvas');
-    cv.width = Math.round(im.width * sc); cv.height = Math.round(im.height * sc);
-    cv.getContext('2d').drawImage(im, 0, 0, cv.width, cv.height);
-    URL.revokeObjectURL(url);
-    try {
-      localStorage.setItem('wp-custom', cv.toDataURL('image/jpeg', 0.8));
-      localStorage.setItem('wp-style', 'photo');
-      msg.textContent = 'Wallpaper set ✓';
-    } catch { msg.textContent = 'That photo is too big to save here. Try a smaller one.'; }
+  try {
+    const url = await blobToDataURL(await shrink(f, 1600));
+    try { localStorage.setItem('wp-custom', url); localStorage.setItem('wp-style', 'photo'); msg.textContent = 'Wallpaper set ✓'; }
+    catch { msg.textContent = 'That photo is too big to save here. Try a smaller one.'; }
     applyWallpaper();
-    e.target.value = '';
-  };
-  im.onerror = () => { msg.textContent = "Couldn't read that image."; URL.revokeObjectURL(url); };
-  im.src = url;
+  } catch { msg.textContent = "Couldn't read that image."; }
+  e.target.value = '';
 };
 
 /* ---------- Start ---------- */
 applyWallpaper();
+applyGlass();
 route();
 status(read('gh-config') ? 'Syncing…' : 'Saved on this device only');
 sync();
+flushUploads();
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => navigator.serviceWorker.register('sw.js'));
 }
