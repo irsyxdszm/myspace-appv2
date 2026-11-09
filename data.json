@@ -27,6 +27,15 @@
    "kind": "event",
    "who": "ain",
    "done": false
+  },
+  {
+   "id": 1794213558228,
+   "date": "2026-11-14",
+   "time": "08:30",
+   "title": "Service e.mas",
+   "kind": "event",
+   "who": "ain",
+   "done": false
   }
  ],
  "restock": [
