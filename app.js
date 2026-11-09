@@ -10,6 +10,7 @@ const clean = (d) => ({
   irsyad: Array.isArray(d && d.irsyad) ? d.irsyad : [],
   ain: Array.isArray(d && d.ain) ? d.ain : [],
   events: Array.isArray(d && d.events) ? d.events : [],
+  restock: Array.isArray(d && d.restock) ? d.restock : [],
   start: typeof (d && d.start) === 'string' ? d.start : '',
 });
 // Also picks up lists saved by older versions of the app.
@@ -27,6 +28,13 @@ const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls)
 
 let taskFilter = 'all';
 let taskFor = lsGet('task-for') || 'irsyad';
+let calFilter = 'all';
+let calFor = lsGet('cal-for') || 'both';
+let restockFilter = 'all';
+let restockFor = lsGet('restock-for') || 'wet';
+const WHO = { both: 'Irsyad & Ain', irsyad: 'Irsyad', ain: 'Ain' };
+const evWho = (e) => (e.who === 'irsyad' || e.who === 'ain' ? e.who : 'both');   // older events count as both
+const visibleEvents = () => data.events.filter((e) => calFilter === 'all' || evWho(e) === 'both' || evWho(e) === calFilter);
 let selDay = ymd(new Date());
 let calMonth = new Date(); calMonth.setDate(1);
 function goDay(date) { selDay = date; const d = toDate(date); calMonth = new Date(d.getFullYear(), d.getMonth(), 1); }
@@ -38,7 +46,7 @@ function changed() {                       // call after any edit
 }
 
 /* ---------- Screens ---------- */
-const VIEWS = ['home', 'cal', 'tasks', 'chat', 'settings', 'wallpaper'];
+const VIEWS = ['home', 'cal', 'tasks', 'restock', 'chat', 'settings', 'wallpaper'];
 function route() {
   let page = location.hash.slice(1);
   if (page === 'irsyad' || page === 'ain') { taskFilter = page; page = 'tasks'; }   // links from the older version
@@ -50,6 +58,7 @@ function route() {
   if (view === 'home') { renderHome(); chatSync(); }
   if (view === 'cal') renderCal();
   if (view === 'tasks') renderTasks();
+  if (view === 'restock') renderRestock();
   if (view === 'chat') openChat();
   if (view === 'settings') {
     const c = read('gh-config');
@@ -95,9 +104,11 @@ function renderTasks() {
   $('empty').hidden = shown.length > 0;
   $('clear').hidden = !rows.some((r) => r.t.done);
 }
-document.querySelectorAll('#tfilter button').forEach((b) => { b.onclick = () => { taskFilter = b.dataset.f; renderTasks(); }; });
+document.querySelectorAll('#tfilter button').forEach((b) => {
+  b.onclick = () => { taskFilter = b.dataset.f; if (taskFilter !== 'all') { taskFor = taskFilter; write('task-for', taskFor); } renderTasks(); };
+});
 document.querySelectorAll('#tfor button').forEach((b) => {
-  b.onclick = () => { taskFor = b.dataset.k; write('task-for', taskFor); renderTasks(); };
+  b.onclick = () => { taskFor = b.dataset.k; write('task-for', taskFor); if (taskFilter !== 'all') taskFilter = taskFor; renderTasks(); };
 });
 $('add').onsubmit = (e) => {
   e.preventDefault();
@@ -111,11 +122,13 @@ $('clear').onclick = () => { for (const k of KEYS) data[k] = data[k].filter((t) 
 
 /* ---------- Calendar (events and reminders by date) ---------- */
 function renderCal() {
+  document.querySelectorAll('#cfilter button').forEach((b) => b.classList.toggle('on', b.dataset.f === calFilter));
+  document.querySelectorAll('#cfor button').forEach((b) => b.classList.toggle('on', b.dataset.w === calFor));
   const y = calMonth.getFullYear(), m = calMonth.getMonth();
   $('cal-title').textContent = calMonth.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
   const blanks = new Date(y, m, 1).getDay(), days = new Date(y, m + 1, 0).getDate();
   const counts = {};
-  for (const e of data.events) counts[e.date] = (counts[e.date] || 0) + 1;
+  for (const e of visibleEvents()) counts[e.date] = (counts[e.date] || 0) + 1;
   const todayKey = ymd(new Date());
   const grid = $('cal-grid');
   grid.innerHTML = '';
@@ -133,7 +146,7 @@ function renderCal() {
 }
 function renderDay() {
   $('day-title').textContent = longDay(selDay);
-  const items = data.events.filter((e) => e.date === selDay).sort(byWhen);
+  const items = visibleEvents().filter((e) => e.date === selDay).sort(byWhen);
   const ul = $('day-list');
   ul.innerHTML = '';
   for (const e of items) {
@@ -146,12 +159,12 @@ function renderDay() {
       lead.onchange = () => { e.done = lead.checked; changed(); renderDay(); };
     } else lead = el('i', 'evdot');
     const body = el('span', '', e.title);
-    body.append(el('small', '', [fmtTime(e.time), e.kind === 'reminder' ? 'Reminder' : 'Event'].filter(Boolean).join(' · ')));
+    body.append(el('small', '', [fmtTime(e.time), e.kind === 'reminder' ? 'Reminder' : 'Event', WHO[evWho(e)]].filter(Boolean).join(' · ')));
     const del = el('button', 'del', '×');
     del.type = 'button';
     del.setAttribute('aria-label', 'Delete: ' + e.title);
     del.onclick = () => { data.events = data.events.filter((x) => x.id !== e.id); changed(); renderCal(); };
-    li.append(lead, body, del);
+    li.append(lead, body, ...(evWho(e) === 'both' ? [] : [el('i', 'av', PEOPLE[evWho(e)][0])]), del);
     ul.append(li);
   }
   $('day-empty').hidden = items.length > 0;
@@ -159,14 +172,69 @@ function renderDay() {
 $('prev').onclick = () => { calMonth = new Date(calMonth.getFullYear(), calMonth.getMonth() - 1, 1); renderCal(); };
 $('next').onclick = () => { calMonth = new Date(calMonth.getFullYear(), calMonth.getMonth() + 1, 1); renderCal(); };
 $('todaybtn').onclick = () => { goDay(ymd(new Date())); renderCal(); };
+document.querySelectorAll('#cfilter button').forEach((b) => {
+  b.onclick = () => { calFilter = b.dataset.f; if (calFilter !== 'all') { calFor = calFilter; write('cal-for', calFor); } renderCal(); };
+});
+document.querySelectorAll('#cfor button').forEach((b) => {
+  b.onclick = () => { calFor = b.dataset.w; write('cal-for', calFor); if (calFilter !== 'all' && calFor !== 'both') calFilter = calFor; renderCal(); };
+});
 $('evform').onsubmit = (e) => {
   e.preventDefault();
   const title = $('evtitle').value.trim();
   if (!title) return;
-  data.events.push({ id: Date.now(), date: selDay, time: $('evtime').value, title, kind: $('evkind').value, done: false });
+  data.events.push({ id: Date.now(), date: selDay, time: $('evtime').value, title, kind: $('evkind').value, who: calFor, done: false });
   $('evtitle').value = ''; $('evtime').value = '';
   changed(); renderCal();
 };
+
+/* ---------- Restock (kitchen wet/dry, personal for Irsyad or Ain) ---------- */
+const CATS = { wet: 'Kitchen · Wet', dry: 'Kitchen · Dry', irsyad: "Irsyad's personal items", ain: "Ain's personal items" };
+function renderRestock() {
+  document.querySelectorAll('#rfilter button').forEach((b) => b.classList.toggle('on', b.dataset.f === restockFilter));
+  document.querySelectorAll('#rfor button').forEach((b) => b.classList.toggle('on', b.dataset.k === restockFor));
+  const box = $('rlist');
+  box.innerHTML = '';
+  let total = 0, open = 0;
+  for (const c of restockFilter === 'all' ? Object.keys(CATS) : [restockFilter]) {
+    const items = data.restock.filter((i) => i.cat === c).sort((a, b) => (+!!a.done - +!!b.done) || (b.id - a.id));
+    if (!items.length) continue;
+    box.append(el('h3', '', CATS[c]));
+    const ul = el('ul');
+    for (const i of items) {
+      total++; if (!i.done) open++;
+      const li = el('li', i.done ? 'done' : '');
+      const cb = el('input');
+      cb.type = 'checkbox'; cb.checked = !!i.done;
+      cb.setAttribute('aria-label', 'Bought: ' + i.text);
+      cb.onchange = () => { i.done = cb.checked; changed(); renderRestock(); };
+      const del = el('button', 'del', '×');
+      del.type = 'button';
+      del.setAttribute('aria-label', 'Delete: ' + i.text);
+      del.onclick = () => { data.restock = data.restock.filter((x) => x.id !== i.id); changed(); renderRestock(); };
+      li.append(cb, el('span', '', i.text), del);
+      ul.append(li);
+    }
+    box.append(ul);
+  }
+  $('rcount').textContent = total ? open + ' to buy' : '';
+  $('rempty').hidden = total > 0;
+  $('rclear').hidden = !data.restock.some((i) => i.done);
+}
+document.querySelectorAll('#rfilter button').forEach((b) => {
+  b.onclick = () => { restockFilter = b.dataset.f; if (restockFilter !== 'all') { restockFor = restockFilter; write('restock-for', restockFor); } renderRestock(); };
+});
+document.querySelectorAll('#rfor button').forEach((b) => {
+  b.onclick = () => { restockFor = b.dataset.k; write('restock-for', restockFor); if (restockFilter !== 'all') restockFilter = restockFor; renderRestock(); };
+});
+$('radd').onsubmit = (e) => {
+  e.preventDefault();
+  const text = $('rtext').value.trim();
+  if (!text) return;
+  data.restock.unshift({ id: Date.now(), cat: restockFor, text, done: false });
+  $('rtext').value = '';
+  changed(); renderRestock();
+};
+$('rclear').onclick = () => { data.restock = data.restock.filter((i) => !i.done); changed(); renderRestock(); };
 
 /* ---------- Home ---------- */
 function fill(box, rows, emptyText) {
@@ -186,7 +254,7 @@ function evRow(e, extra) {                 // one event or reminder as a card
   const a = el('a', 'tbody');
   a.href = '#cal';
   a.onclick = () => goDay(e.date);
-  a.append(el('b', '', e.title), el('small', '', [extra, fmtTime(e.time), e.kind === 'reminder' ? 'Reminder' : 'Event'].filter(Boolean).join(' · ')));
+  a.append(el('b', '', e.title), el('small', '', [extra, fmtTime(e.time), e.kind === 'reminder' ? 'Reminder' : 'Event', WHO[evWho(e)]].filter(Boolean).join(' · ')));
   row.append(lead, a);
   return row;
 }
@@ -240,6 +308,9 @@ $('q').oninput = () => {
   const hits = [];
   for (const k of KEYS) for (const t of data[k]) {
     if (t.text.toLowerCase().includes(q)) hits.push({ href: '#tasks', title: t.text, sub: PEOPLE[k] + "'s task" + (t.done ? ' (done)' : '') });
+  }
+  for (const i of data.restock) {
+    if (i.text.toLowerCase().includes(q)) hits.push({ href: '#restock', title: i.text, sub: 'Restock · ' + CATS[i.cat] + (i.done ? ' (bought)' : '') });
   }
   for (const e of data.events) {
     if (e.title.toLowerCase().includes(q)) hits.push({ href: '#cal', title: e.title, sub: (e.kind === 'reminder' ? 'Reminder' : 'Event') + ' · ' + shortDay(e.date), day: e.date });
@@ -312,7 +383,7 @@ async function sync() {
       if (!isDirty()) { data = clean(JSON.parse(dec(j.content))); write('myspace-data', data); route(); }
     } else if (r.status === 404) {
       sha = null;
-      if (data.irsyad.length || data.ain.length || data.events.length) write('myspace-dirty', '1');
+      if (data.irsyad.length || data.ain.length || data.events.length || data.restock.length) write('myspace-dirty', '1');
     } else throw new Error(r.status);
     if (isDirty()) await put(c);
     status('Saved to GitHub ✓');

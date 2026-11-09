@@ -237,3 +237,17 @@ li span small { display: block; color: var(--muted); font-size: .8rem; }
 @media (min-width: 900px) {
   #cal, #tasks, #settings, #wallpaper { max-width: 34rem; margin-left: auto; margin-right: auto; }
 }
+
+/* ===== Restock, calendar people, no greeting ===== */
+#home .date { margin: 0 0 .8rem; }
+.chips #cfor, .chips #rfor { display: flex; gap: .5rem; flex-wrap: wrap; }
+#restock header { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: .25rem; }
+#restock .sub { margin-bottom: 1rem; font-size: .92rem; }
+#radd { display: flex; gap: .5rem; margin-bottom: 1.1rem; }
+#radd button { background: var(--deep); color: var(--cream); border: 0; border-radius: 12px; padding: 0 1.25rem; font-weight: 600; }
+#rlist h3 { font-family: var(--serif); font-size: 1.15rem; margin: 1.1rem 0 .5rem; }
+#rempty { color: var(--muted); text-align: center; margin-top: 2rem; }
+#rclear { display: block; margin: 1.25rem auto 0; background: none; border: 0; color: var(--deep); text-decoration: underline; }
+@media (min-width: 900px) { #restock { max-width: 34rem; margin-left: auto; margin-right: auto; } }
+.lead { margin-bottom: 1.4rem; }
+@media (min-width: 900px) { .lead { margin-bottom: 0; } }
