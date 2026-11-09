@@ -25,6 +25,15 @@
    "title": "Wedding Imran",
    "kind": "event",
    "done": false
+  },
+  {
+   "id": 1794212948187,
+   "date": "2026-11-20",
+   "time": "09:00",
+   "title": "Locum radziah",
+   "kind": "event",
+   "who": "irsyad",
+   "done": false
   }
  ],
  "restock": [],
