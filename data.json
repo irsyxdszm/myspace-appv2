@@ -36,6 +36,15 @@
    "kind": "event",
    "who": "ain",
    "done": false
+  },
+  {
+   "id": 1794213837456,
+   "date": "2026-11-28",
+   "time": "20:00",
+   "title": "Locum Madeena",
+   "kind": "event",
+   "who": "ain",
+   "done": false
   }
  ],
  "restock": [
