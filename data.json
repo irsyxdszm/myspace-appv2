@@ -45,6 +45,15 @@
    "kind": "event",
    "who": "ain",
    "done": false
+  },
+  {
+   "id": 1794284610365,
+   "date": "2026-11-12",
+   "time": "08:00",
+   "title": "Locum Madeena",
+   "kind": "event",
+   "who": "ain",
+   "done": false
   }
  ],
  "restock": [
