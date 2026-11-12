@@ -72,6 +72,15 @@
    "kind": "event",
    "who": "both",
    "done": false
+  },
+  {
+   "id": 1794464765242,
+   "date": "2026-12-04",
+   "time": "",
+   "title": "Anniversary KL",
+   "kind": "event",
+   "who": "both",
+   "done": false
   }
  ],
  "restock": [
